@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swaroop Nath</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Open Sans', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    <!-- MODIFIED: Added a style block to make the theme transition gradual -->
+    <style>
+        /* This applies a smooth, 1-second transition to the theme change */
+        body, header, div, h1, h2, h3, p, a, button {
+            transition: background-color 1s ease, color 1s ease;
+        }
+    </style>
+</head>
+<!-- MODIFIED: Removed the previous, faster transition classes -->
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+
+    <!-- Universal Sticky Header -->
+    <header class="bg-white/90 dark:bg-gray-800/90 backdrop-blur-sm shadow-md sticky top-0 z-50">
+        <nav class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <!-- Left side: Name -->
+            <div>
+                <a href="#" class="text-xl font-bold text-gray-900 dark:text-white">Swaroop Nath</a>
+            </div>
+            <!-- Right side: Nav links and theme toggle -->
+            <div class="flex items-center space-x-6">
+                 <div class="hidden sm:flex items-center space-x-4 text-sm font-medium text-gray-500 dark:text-gray-400">
+                    <a href="#about" class="hover:text-blue-500">About</a>
+                    <a href="#news" class="hover:text-blue-500">News</a>
+                    <a href="#publications" class="hover:text-blue-500">Publications</a>
+                </div>
+                <button id="theme-toggle-main" class="p-2 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400">
+                    <span id="theme-icon-container">
+                        <i data-lucide="moon" class="h-5 w-5"></i>
+                    </span>
+                    <span class="sr-only">Toggle theme</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Left Column -->
+            <div class="md:col-span-1 md:sticky top-24">
+                <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                    <img src="swaroop-nath.jpeg" alt="Swaroop Nath" class="rounded-full w-38 h-36 mx-auto mb-4 border-4 border-gray-200 dark:border-gray-700">
+                    <h1 class="text-3xl font-bold text-center text-gray-900 dark:text-white">Swaroop Nath</h1>
+                    <p class="text-center text-gray-500 dark:text-gray-400 mt-1">Pre-Doctoral Researcher @ Google DeepMind</p>
+                    
+                    <div class="mt-6 text-sm text-gray-600 dark:text-gray-300 space-y-2">
+                        <div class="flex items-center">
+                            <i class="fas fa-envelope mr-3 w-4 text-center"></i>
+                            <a id="email-link" href="#" class="hover:text-blue-500" data-a="c3dhcm9vcG5hdGg2" data-b="Z21haWwuY29t">swaroopnath6 [at] gmail [dot] com</a>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fab fa-github mr-3 w-4 text-center"></i>
+                            <a href="https://github.com/swaroop-nath" target="_blank" rel="noopener noreferrer" class="hover:text-blue-500">swaroop-nath</a>
+                        </div>
+                        <div class="flex items-center">
+                             <i class="fab fa-twitter mr-3 w-4 text-center"></i>
+                             <a href="https://x.com/swaroopnath6" target="_blank" rel="noopener noreferrer" class="hover:text-blue-500">@swaroopnath6</a>
+                        </div>
+                         <div class="flex items-center">
+                            <i class="fab fa-google mr-3 w-4 text-center"></i>
+                             <a href="https://scholar.google.com/citations?user=pfMk3uMAAAAJ" target="_blank" rel="noopener noreferrer" class="hover:text-blue-500">Google Scholar</a>
+                        </div>
+                        <div class="flex items-center">
+                            <i class="fas fa-file-pdf mr-3 w-4 text-center"></i>
+                            <a href="swaroop_two_page_resume.pdf" target="_blank" class="hover:text-blue-500">Download CV</a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-bold mb-4 text-gray-900 dark:text-white">Experience</h2>
+                    <div class="space-y-8">
+                        <div class="flex">
+                            <div class="flex flex-col items-center mr-4">
+                                <div><div class="flex items-center justify-center w-5 h-5 bg-blue-500 rounded-full ring-4 ring-white dark:ring-gray-800"></div></div>
+                                <div class="w-px h-full bg-gray-300 dark:bg-gray-600"></div>
+                            </div>
+                            <div>
+                                <h3 class="font-semibold text-gray-800 dark:text-gray-100">Pre-Doctoral Researcher</h3>
+                                <p class="text-sm text-gray-600 dark:text-gray-400">Google DeepMind</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-500 mt-1">July 2024 - Present</p>
+                            </div>
+                        </div>
+                        <div class="flex">
+                            <div class="flex flex-col items-center mr-4">
+                                <div><div class="flex items-center justify-center w-5 h-5 bg-blue-500 rounded-full ring-4 ring-white dark:ring-gray-800"></div></div>
+                            </div>
+                            <div>
+                                 <h3 class="font-semibold text-gray-800 dark:text-gray-100">AI/ML Research Intern</h3>
+                                <p class="text-sm text-gray-600 dark:text-gray-400">LinkedIn</p>
+                                <p class="text-xs text-gray-500 dark:text-gray-500 mt-1">May 2023 - July 2023</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                    <h2 class="text-xl font-bold mb-4 text-gray-900 dark:text-white">Education</h2>
+                     <div class="flex">
+                        <div class="flex flex-col items-center mr-4">
+                            <div><div class="flex items-center justify-center w-5 h-5 bg-blue-500 rounded-full ring-4 ring-white dark:ring-gray-800"></div></div>
+                        </div>
+                        <div>
+                            <h3 class="font-semibold text-gray-800 dark:text-gray-100">MS by Research, CSE</h3>
+                            <p class="text-sm text-gray-600 dark:text-gray-400">Indian Institute of Technology, Bombay</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-500 mt-1">Aug 2021 - June 2024</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column -->
+            <div class="md:col-span-2">
+                <div class="space-y-12">
+                    <section id="about" class="scroll-mt-20">
+                        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">About Me</h2>
+                        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md space-y-4 text-gray-600 dark:text-gray-300">
+                            <p>
+                                Hi! I am a Pre-Doctoral Researcher in Google DeepMind India. Here I work with the amazing folks in the Machine Learning and Optimization team, led by <em><a href="https://www.prateekjain.org/" class="hover:underline" style="color: #b78d0d;" target="_blank">Dr. Prateek Jain</a></em>. My work mostly revolves around efficiency — where I initially dabbled with Efficient Attention, and eventually moved to Efficient Reasoning.
+                            </p>
+                            <p>
+                                Prior to this, I graduated as an MS by Research scholar from the CFILT Lab, IIT Bombay. I was fortunate enough to be advised by <em><a href="https://en.wikipedia.org/wiki/Pushpak_Bhattacharyya" class="hover:underline" style="color: #b78d0d;" target="_blank">Dr. Pushpak Bhattacharyya</a></em> (<a href="https://www.cse.iitb.ac.in/memorial" class="text-blue-500 hover:underline" target="_blank">God rest his soul</a>) and <em><a href="https://sites.google.com/corp/view/harshad/home" style="color: #b78d0d;" class="hover:underline" target="_blank">Dr. Harshad Khadilkar</a></em>. My Thesis was recognized with the <q><em>Winifred B. Fernandes Research Excellence Award</em></q>. My works have been featured in A* NLP conferences — EMNLP and ACL.
+                            </p>
+                        </div>
+                    </section>
+                    
+                    <section id="news" class="scroll-mt-20">
+                        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">News</h2>
+                        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md h-96 overflow-y-auto">
+                            <ul class="space-y-4">
+                                <li class="flex items-start">
+                                    <span class="text-blue-500 mr-4 mt-1">&#10148;</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Attending ACL 2024 in Thailand to present our paper: <q><a href="https://aclanthology.org/2024.acl-long.655/" class="text-blue-500 hover:underline" target="_blank"><em>One Prompt To Rule Them All: LLMs for Opinion Summary Evaluation</em></a></q>.</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">August 2024</p>
+                                    </div>
+                                </li>
+                                 <li class="flex items-start">
+                                    <span class="text-blue-500 mr-4 mt-1">&#10148;</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Received the <q><em><a href="https://www.cse.iitb.ac.in/news?year=2024&id=1022" target="_blank" class="text-blue-500  hover:underline">Winifred B. Fernandes Research Excellence Award</a></em></q> for my MS Thesis at IIT Bombay.</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">June 2024</p>
+                                    </div>
+                                </li>
+                                <li class="flex items-start">
+                                    <span class="text-blue-500 mr-4 mt-1">&#10148;</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Graduated from IIT Bombay with an MS by Research in Computer Science & Engineering.</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">June 2024</p>
+                                    </div>
+                                </li>
+                                <li class="flex items-start">
+                                    <span class="text-blue-500 mr-4 mt-1">&#10148;</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Selected to join Google DeepMind as a Pre-Doctoral Researcher from a competitive pool of applicants.</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">February 2024</p>
+                                    </div>
+                                </li>
+                                <li class="flex items-start">
+                                    <span class="text-blue-500 mr-4 mt-1">&#10148;</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Best talk award for <q><em>Efficient Reward Modelling in RLHF</em></q> at <a href="https://www.cse.iitb.ac.in/~risc2024/" target="_blank" class="text-blue-500 hover:underline">RISC'24</a>, CSE@IIT-Bombay.</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">January 2024</p>
+                                    </div>
+                                </li>
+                                 <li class="flex items-start">
+                                    <span class="text-blue-500 mr-4 mt-1">&#10148;</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Attended EMNLP 2023 in Singapore to present our paper: <q><a href="https://aclanthology.org/2023.emnlp-main.977/" target="_blank" class="text-blue-500 hover:underline"><em>Reinforcement Replaces Supervision: Query focused Summarization using Deep Reinforcement Learning</em></a></q>.</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">December 2023</p>
+                                    </div>
+                                </li>
+                                <li class="flex items-start">
+                                    <span class="text-blue-500 mr-4 mt-1">&#10148;</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Delivered a part of a tutorial on Vision-Language Models at ICON 2023.</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">December 2023</p>
+                                    </div>
+                                </li>
+                                <li class="flex items-start">
+                                    <span class="text-blue-500 mr-4 mt-1">&#10148;</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Delivered a tutorial on RLHF and Alignment Research at Qualcomm.</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">August 2023</p>
+                                    </div>
+                                </li>
+                                <li class="flex items-start">
+                                    <span class="text-blue-500 mr-4 mt-1">&#10148;</span>
+                                    <div>
+                                        <p class="font-semibold text-gray-800 dark:text-gray-100">Led IIT Bombay teams to Silver and Bronze Medals in Inter IIT Tech Meet.</p>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">Dec 2022 & Jan 2023</p>
+                                    </div>
+                                </li>
+                            </ul>
+                        </div>
+                    </section>
+
+                    <section id="publications" class="scroll-mt-20">
+                        <h2 class="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Publications & Pre-Prints <span class="text-sm font-normal text-gray-500 dark:text-gray-400">(* = Equal Contribution)</span></h2>
+                        <div class="space-y-6">
+                            <!-- Publication 4 -->
+                            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex flex-col sm:flex-row items-start">
+                                <img src="efficient_rlhf.png" class="w-full sm:w-40 sm:h-40 object-cover rounded-md mb-4 sm:mb-0 sm:mr-4">
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-bold text-gray-900 dark:text-white">Leveraging Domain Knowledge for Efficient Reward Modelling in RLHF</h3>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                                        <strong class="font-semibold">Swaroop Nath*</strong>, Tejpalsingh Siledar*, Pushpak Bhattacharyya, et al.
+                                    </p>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 italic">arXiv Preprint</p>
+                                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-300">This research explores a novel reward modeling approach for Reinforcement Learning from Human Feedback (RLHF) that significantly reduces the need for human preference data by leveraging domain knowledge, demonstrated in the context of e-commerce opinion summarization.</p>
+                                    <div class="mt-3 flex space-x-4 text-sm font-medium">
+                                        <!-- <a href="#" class="text-blue-500 hover:underline">Project Page</a> -->
+                                        <a href="https://arxiv.org/abs/2402.15473" target="_blank" class="text-blue-500 hover:underline">ArXiv</a>
+                                        <a href="https://github.com/swaroop-nath/reward-approx-social-choice-opp-summ" target="_blank" class="text-blue-500 hover:underline">Code</a>
+                                        <a href="https://docs.google.com/presentation/d/1pzHrpbQr0nxIe2jDH6YIt3D6J0Nh9K66GUdBlhEBTQU/edit?usp=sharing" target="_blank" class="text-blue-500 hover:underline">Slides</a>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Publication 1 -->
+                            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex flex-col sm:flex-row items-start">
+                                <img src="one_prompt_img.png" class="w-full sm:w-40 sm:h-40 object-cover rounded-md mb-2 sm:mb-0 sm:mr-4">
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-bold text-gray-900 dark:text-white">One Prompt To Rule Them All: LLMs for Opinion Summary Evaluation</h3>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                                        <strong class="font-semibold">Swaroop Nath*</strong>, Tejpalsingh Siledar*, Pushpak Bhattacharyya, et al.
+                                    </p>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 italic"><u>ACL 2024</u></p>
+                                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-300">This work introduces SUMMEVAL-OP, a benchmark dataset for evaluating opinion summaries, and proposes two novel prompting strategies (OP-I-PROMPT and OP-PROMPTS) that significantly improve the correlation of LLM-based evaluations with human judgments, especially for open-source models.</p>
+                                    <div class="mt-3 flex space-x-4 text-sm font-medium">
+                                        <!-- <a href="one-prompt-project.html" class="text-blue-500 hover:underline">Project Page</a> -->
+                                        <a href="https://aclanthology.org/2024.acl-long.655/" target="_blank" class="text-blue-500 hover:underline">Paper</a>
+                                        <a href="https://github.com/tjsiledar/SummEval-OP" class="text-blue-500 hover:underline" target="_blank">Code</a>
+                                    </div>
+                                </div>
+                            </div>
+                             <!-- Publication 3 -->
+                            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex flex-col sm:flex-row items-start">
+                                <img src="transformers_expressivity.png" class="w-full sm:w-40 sm:h-40 object-cover rounded-md mb-4 sm:mb-0 sm:mr-4">
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-bold text-gray-900 dark:text-white">Transformers are Expressive, But Are They Expressive Enough for Regression?</h3>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                                        <strong class="font-semibold">Swaroop Nath</strong>, Harshad Khadilkar, and Pushpak Bhattacharyya
+                                    </p>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 italic">arXiv Preprint</p>
+                                    <p class="text-sm mt-2 text-gray-600 dark:text-gray-300">This work investigates the theoretical and empirical limitations of Transformer models in approximating smooth functions, a fundamental aspect of regression tasks. The findings suggest inherent constraints on their expressivity in this domain.</p>
+                                    <div class="mt-3 flex space-x-4 text-sm font-medium">
+                                        <!-- <a href="#" class="text-blue-500 hover:underline">Project Page</a> -->
+                                        <a href="https://arxiv.org/abs/2402.15478" target="_blank" class="text-blue-500 hover:underline">ArXiv</a>
+                                        <a href="https://github.com/swaroop-nath/transformer-expressivity" target="_blank" class="text-blue-500 hover:underline">Code</a>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Publication 2 -->
+                            <div class="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-md flex flex-col sm:flex-row items-start">
+                                <img src="rl_qfs.png" class="w-full sm:w-40 sm:h-40 object-cover rounded-md mb-4 sm:mb-0 sm:mr-4">
+                                <div class="flex-1">
+                                    <h3 class="text-lg font-bold text-gray-900 dark:text-white">Reinforcement Replaces Supervision: Query focused Summarization using Deep Reinforcement Learning</h3>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                                        <strong class="font-semibold">Swaroop Nath</strong>, Pushpak Bhattacharyya, and Harshad Khadilcar
+                                    </p>
+                                    <p class="text-sm text-gray-500 dark:text-gray-400 italic"><u>EMNLP 2023</u></p>
+                                     <p class="text-sm mt-2 text-gray-600 dark:text-gray-300">This paper proposes a novel reinforcement learning (RL) algorithm for query-focused summarization (QfS), achieving significant improvements over state-of-the-art supervised methods. The approach also introduces a new passage embedding scheme to create a more effective reward function for training.</p>
+                                    <div class="mt-3 flex space-x-4 text-sm font-medium">
+                                        <!-- <a href="qfs-drl.html" class="text-blue-500 hover:underline">Project Page</a> -->
+                                        <a href="https://aclanthology.org/2023.emnlp-main.977/" target="_blank" class="text-blue-500 hover:underline">Paper</a>
+                                        <a href="https://github.com/swaroop-nath/rl-qfs" target="_blank" class="text-blue-500 hover:underline">Code</a>
+                                        <a href="https://docs.google.com/presentation/d/1SwUdxfFakAXzXpB2iQmcB98tUvm_oj2BAUHVgtwJ7pU/edit?usp=sharing" target="_blank" class="text-blue-500 hover:underline">Slides</a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <script>
+        // Email scrambling
+        document.getElementById('email-link').addEventListener('mouseover', function() {
+            const a = this.getAttribute('data-a');
+            const b = this.getAttribute('data-b');
+            this.href = 'mailto:' + atob(a) + '@' + atob(b);
+        });
+
+        // --- THEME TOGGLER SCRIPT (CORRECTED) ---
+        const themeToggleButton = document.getElementById('theme-toggle-main');
+        const themeIconContainer = document.getElementById('theme-icon-container');
+
+        // Function to update the button icon and tooltip based on the theme state
+        const updateThemeButton = (isDark) => {
+            const iconName = isDark ? 'sun' : 'moon';
+            const title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+            
+            themeToggleButton.setAttribute('title', title);
+            themeIconContainer.innerHTML = `<i data-lucide="${iconName}" class="h-5 w-5"></i>`;
+
+            // After changing the innerHTML, tell Lucide to re-render the icons
+            lucide.createIcons();
+        }
+
+        // Function to apply the theme class to <html> and update the button
+        const applyTheme = (isDark) => {
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+            updateThemeButton(isDark);
+        };
+
+        // Event listener for the toggle button click
+        themeToggleButton.addEventListener('click', () => {
+            const isCurrentlyDark = document.documentElement.classList.contains('dark');
+            const newThemeIsDark = !isCurrentlyDark;
+            localStorage.setItem('color-theme', newThemeIsDark ? 'dark' : 'light');
+            applyTheme(newThemeIsDark);
+        });
+
+        // Initialize the theme when the page loads
+        const initializeTheme = () => {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const savedTheme = localStorage.getItem('color-theme');
+            // 1. Use saved theme from localStorage if it exists
+            // 2. Otherwise, use the OS/browser preference
+            const isDark = savedTheme === 'dark' || (savedTheme === null && prefersDark);
+            applyTheme(isDark);
+        };
+
+        // Run the theme initialization
+        // We need to wait for the DOM to be fully loaded before initializing lucide
+        document.addEventListener('DOMContentLoaded', (event) => {
+            initializeTheme();
+        });
+
+    </script>
+
+</body>
+</html>
+
