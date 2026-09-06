@@ -40,16 +40,20 @@
             border-bottom: 1px solid;
         }
 
-        /* Email reveal: the address is assembled in JS on click, so it never
-           sits in the markup for scrapers to harvest. */
+        /* Email: shown as a jumble of its own characters until unscrambled.
+           Approach after Jeff Donahue's scramble.js. */
         .email-btn {
             color: var(--accent);
-            font-size: inherit;
+            font-size: 0.75rem;
             text-align: left;
             border-bottom: 1px dashed currentColor;
         }
         .email-btn:hover { border-bottom-style: solid; }
-        .email-address { user-select: all; }
+        .email-address {
+            user-select: all;
+            font-variant-ligatures: none;
+        }
+        .email-scrambled { user-select: none; }
         .email-copy {
             color: #a1a1aa;
             font-size: 0.75rem;
@@ -158,8 +162,8 @@
                 <div class="mt-6 text-sm text-gray-600 dark:text-gray-400 space-y-2">
                     <div class="flex items-center">
                         <i class="fas fa-envelope mr-3 w-4 text-center text-gray-400 dark:text-gray-600"></i>
-                        <span id="email-slot" class="inline-flex items-center gap-2">
-                            <button id="email-reveal" type="button" class="email-btn">Show email address</button>
+                        <span id="email-slot" class="inline-flex items-center gap-2 flex-wrap">
+                            <noscript><i>Please enable JavaScript to view</i></noscript>
                         </span>
                     </div>
                     <div class="flex items-center">
@@ -371,27 +375,40 @@
     </main>
 
     <script>
-        // --- EMAIL REVEAL ---
-        // Stored as shifted character codes and assembled only when the button
-        // is clicked. Deters bulk scrapers, which do not run clicks; it is
-        // obfuscation, not encryption.
+        // --- EMAIL SCRAMBLE ---
+        // The address is stored with two character pairs transposed, so the real
+        // one appears nowhere in the source. It is shuffled again on load, and the
+        // "unscramble" link animates a bubble sort that settles it into place.
+        // Approach after Jeff Donahue's scramble.js (jeffdonahue.com).
         (function () {
-            const SHIFTED = [138,142,120,137,134,134,135,133,120,139,127,77,87,126,132,120,128,131,69,122,134,132];
-            const KEY = 23;
             const slot = document.getElementById('email-slot');
-            const revealBtn = document.getElementById('email-reveal');
-            if (!slot || !revealBtn) return;
+            if (!slot) return;
 
-            revealBtn.addEventListener('click', function () {
-                const address = SHIFTED.map(function (c) {
-                    return String.fromCharCode(c - KEY);
-                }).join('');
+            let chars = 'swaroopnath6@gmial.cmo'.split('');
+            let order = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 15, 17, 18, 19, 21, 20];
 
-                slot.innerHTML = '';
+            // Fisher-Yates, keeping each character with its true index
+            for (let i = chars.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [chars[i], chars[j]] = [chars[j], chars[i]];
+                [order[i], order[j]] = [order[j], order[i]];
+            }
 
-                const text = document.createElement('span');
+            const text = document.createElement('span');
+            text.className = 'email-scrambled';
+            text.textContent = chars.join('');
+
+            const link = document.createElement('button');
+            link.type = 'button';
+            link.className = 'email-btn';
+            link.textContent = 'unscramble';
+
+            slot.appendChild(text);
+            slot.appendChild(link);
+
+            const finish = function () {
                 text.className = 'email-address';
-                text.textContent = address;
+                link.remove();
 
                 const copy = document.createElement('button');
                 copy.type = 'button';
@@ -399,7 +416,7 @@
                 copy.title = 'Copy to clipboard';
                 copy.innerHTML = '<i data-lucide="copy" class="h-3.5 w-3.5"></i>';
                 copy.addEventListener('click', function () {
-                    navigator.clipboard.writeText(address).then(function () {
+                    navigator.clipboard.writeText(text.textContent).then(function () {
                         copy.innerHTML = '<i data-lucide="check" class="h-3.5 w-3.5"></i>';
                         lucide.createIcons();
                         setTimeout(function () {
@@ -408,10 +425,49 @@
                         }, 1500);
                     });
                 });
-
-                slot.appendChild(text);
                 slot.appendChild(copy);
                 lucide.createIcons();
+            };
+
+            const sortInstantly = function () {
+                const pairs = chars.map(function (c, i) { return [order[i], c]; });
+                pairs.sort(function (a, b) { return a[0] - b[0]; });
+                chars = pairs.map(function (p) { return p[1]; });
+                order = pairs.map(function (p) { return p[0]; });
+                text.textContent = chars.join('');
+                finish();
+            };
+
+            link.addEventListener('click', function () {
+                link.disabled = true;
+
+                const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                if (reduced) { sortInstantly(); return; }
+
+                // One adjacent swap per tick, resuming where the last scan stopped,
+                // so the text visibly settles rather than snapping into place.
+                let bookmark = 0;
+                const timer = setInterval(function () {
+                    let swapped = false;
+                    for (let i = bookmark; i < order.length - 1; i++) {
+                        if (order[i] > order[i + 1]) {
+                            [order[i], order[i + 1]] = [order[i + 1], order[i]];
+                            [chars[i], chars[i + 1]] = [chars[i + 1], chars[i]];
+                            text.textContent = chars.join('');
+                            bookmark = i > 0 ? i - 1 : 0;
+                            swapped = true;
+                            break;
+                        }
+                    }
+                    if (!swapped) {
+                        if (bookmark === 0) {
+                            clearInterval(timer);
+                            finish();
+                        } else {
+                            bookmark = 0;
+                        }
+                    }
+                }, 14);
             });
         })();
 
