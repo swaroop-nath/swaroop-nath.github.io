@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One Prompt To Rule Them All &middot; Swaroop Nath</title>
+    <meta name="description" content="One evaluation prompt where only the metric definition changes lets LLMs rate opinion summaries on seven dimensions, reaching an average Spearman correlation of 0.70 with human judgments.">
+    <meta property="og:title" content="One Prompt To Rule Them All: LLMs for Opinion Summary Evaluation">
+    <meta property="og:description" content="One evaluation prompt where only the metric definition changes lets LLMs rate opinion summaries on seven dimensions, reaching an average Spearman correlation of 0.70 with human judgments.">
+    <meta property="og:image" content="https://swaroop-nath.github.io/one-prompt/prompt-approaches.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['DM Sans', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'] } } },
+        }
+    </script>
+    <link rel="stylesheet" href="../assets/project.css">
+    <script src="../assets/project.js"></script>
+    <style>
+        .label-sm { color: var(--muted); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+
+        /* Prompt viewer: one div per prompt line so changed lines can be marked */
+        .prompt-view {
+            position: relative;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 0.5rem;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.75rem;
+            line-height: 1.6;
+            max-height: 30rem;
+            overflow: auto;
+            padding: 0.75rem 0;
+        }
+        .prompt-view .ln { white-space: pre-wrap; word-break: break-word; padding: 0 0.9rem; border-left: 3px solid transparent; min-height: 1.2em; }
+        .prompt-view .ln.head { color: var(--fg-strong); font-weight: 700; }
+        .prompt-view .ln.chg { background: var(--accent-soft); border-left-color: var(--accent); }
+        .prompt-view .slot {
+            display: inline-block;
+            padding: 0 0.4rem;
+            border: 1px dashed var(--accent);
+            border-radius: 0.25rem;
+            color: var(--accent);
+        }
+
+        .review-list { max-height: 15rem; overflow: auto; }
+
+        /* Per-dimension rating rows double as dimension pickers */
+        .dim-row { display: grid; grid-template-columns: 9.5rem 1fr 2.4rem; align-items: center; gap: 0.6rem; width: 100%; padding: 0.2rem 0.35rem; border-radius: 0.375rem; text-align: left; font-size: 0.8125rem; color: var(--muted); }
+        .dim-row:hover { background: var(--accent-soft); }
+        .dim-row[aria-pressed="true"] { color: var(--fg-strong); font-weight: 600; }
+        .dim-row .track { height: 6px; border-radius: 9999px; background: var(--line); overflow: hidden; }
+        .dim-row .fill { height: 100%; border-radius: 9999px; background: var(--series-3); }
+        .dim-row[aria-pressed="true"] .fill { background: var(--accent); }
+        .dim-row .val { text-align: right; font-variant-numeric: tabular-nums; }
+        @media (max-width: 400px) { .dim-row { grid-template-columns: 8rem 1fr 2.2rem; } }
+
+        .chart-tip {
+            position: absolute;
+            pointer-events: none;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 0.375rem;
+            padding: 0.35rem 0.55rem;
+            font-size: 0.75rem;
+            color: var(--muted);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+            white-space: nowrap;
+            z-index: 10;
+        }
+        .chart-tip strong { color: var(--fg-strong); font-weight: 600; }
+        .bar-hit { cursor: default; outline: none; }
+        .bar-hit:focus-visible rect.hit { stroke: var(--accent); stroke-width: 1.5; }
+
+        .heat th button { font-weight: 600; color: var(--muted); }
+        .heat th button:hover, .heat th button[aria-sort] { color: var(--accent); }
+        .heat td.cell { text-align: center; font-variant-numeric: tabular-nums; font-size: 0.8125rem; padding: 0.45rem 0.25rem; border: 2px solid var(--surface-2); border-radius: 4px; }
+        .heat td.name { font-size: 0.8125rem; padding-right: 0.6rem; white-space: nowrap; color: var(--fg); }
+        @media (max-width: 480px) {
+            .heat td.name { white-space: normal; font-size: 0.75rem; max-width: 5.5rem; line-height: 1.25; padding-right: 0.4rem; }
+            .heat td.cell { font-size: 0.6875rem; padding: 0.4rem 0.05rem; }
+        }
+        /* Value labels keep a surface-coloured halo so a reference line can pass behind them */
+        .val-halo { paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
+
+        .response { font-size: 0.875rem; line-height: 1.6; }
+        .score-tag { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.75rem; color: var(--accent); }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-200">
+
+    <header class="bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+        <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <div>
+                <a href="../index.html" class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">Swaroop Nath</a>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="hidden sm:flex items-center space-x-5 text-sm text-gray-500 dark:text-gray-400">
+                    <a href="../index.html#about" class="hover:text-gray-900 dark:hover:text-white">About</a>
+                    <a href="../index.html#news" class="hover:text-gray-900 dark:hover:text-white">News</a>
+                    <a href="../index.html#publications" class="hover:text-gray-900 dark:hover:text-white">Publications</a>
+                    <a href="../talks.html" class="hover:text-gray-900 dark:hover:text-white">Talks</a>
+                </div>
+                <button id="theme-toggle-main" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400">
+                    <span id="theme-icon-container"><i data-lucide="moon" class="h-5 w-5"></i></span>
+                    <span class="sr-only">Toggle theme</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <a href="../index.html#publications" class="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+            <i data-lucide="arrow-left" class="h-4 w-4"></i> Publications
+        </a>
+
+        <div class="mt-6 text-center">
+            <span class="venue">ACL 2024</span>
+            <h1 class="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight leading-tight text-gray-900 dark:text-white">One Prompt To Rule Them All: LLMs for Opinion Summary Evaluation</h1>
+            <!-- Author order and marks as in the paper (acl_latex.tex \author block) -->
+            <p class="mt-5 text-gray-700 dark:text-gray-300 leading-relaxed">
+                Tejpalsingh Siledar<sup>&dagger;1</sup>,
+                <a href="../index.html" class="font-semibold text-gray-900 dark:text-white hover:underline">Swaroop Nath</a><sup>&dagger;1</sup>,
+                Sri Raghava<sup>&dagger;1</sup>,
+                Rupasai Rangaraju<sup>&dagger;1</sup>,
+                Swaprava Nath<sup>1</sup>,
+                Pushpak Bhattacharyya<sup>1</sup>,
+                Suman Banerjee<sup>2</sup>,
+                Amey Patil<sup>2</sup>,
+                Sudhanshu Shekhar Singh<sup>2</sup>,
+                Muthusamy Chelliah<sup>2</sup>,
+                Nikesh Garera<sup>2</sup>
+            </p>
+            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400"><sup>1</sup>Computer Science and Engineering, IIT Bombay &nbsp; <sup>2</sup>Flipkart</p>
+            <p class="mt-1 text-xs text-gray-400 dark:text-gray-500"><sup>&dagger;</sup>Equal contribution</p>
+            <div class="mt-6 flex flex-wrap justify-center gap-2">
+                <a class="pill" href="https://aclanthology.org/2024.acl-long.655/" target="_blank" rel="noopener noreferrer"><i class="fas fa-file-pdf"></i> Paper</a>
+                <a class="pill" href="https://arxiv.org/abs/2402.11683" target="_blank" rel="noopener noreferrer"><i class="ai ai-arxiv"></i> arXiv</a>
+                <a class="pill" href="https://github.com/tjsiledar/SummEval-OP" target="_blank" rel="noopener noreferrer"><i class="fab fa-github"></i> Code &amp; Data</a>
+            </div>
+        </div>
+
+        <!-- TL;DR: the 0.70 is Op-I-GPT-3.5's mean Spearman over the 7 dimensions (Table 2; abstract) -->
+        <p class="mt-10 text-center text-lg leading-relaxed text-gray-700 dark:text-gray-300 max-w-2xl mx-auto">
+            A single prompt, with only the metric definition swapped per dimension, lets LLMs evaluate opinion summaries at an average Spearman correlation of 0.70 with human judgments.
+        </p>
+
+        <div class="mt-14 space-y-14">
+
+            <section id="demo" class="scroll-mt-20">
+                <h2 class="section-title">Interactive Demo</h2>
+                <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                    Browse the <span class="whitespace-nowrap">SummEval-Op</span> benchmark: pick a product, a summary and a dimension to see the human ratings and the exact prompt the LLM evaluator receives. Switch dimensions to see which lines of each prompt change.
+                </p>
+
+                <div class="demo mt-5">
+                    <!-- Controls: one row above everything they scope -->
+                    <div class="grid gap-3 sm:grid-cols-2">
+                        <label class="block">
+                            <span class="label-sm">Product</span>
+                            <select id="product-select" class="field mt-1 w-full"></select>
+                        </label>
+                        <label class="block">
+                            <span class="label-sm">Summary written by</span>
+                            <select id="source-select" class="field mt-1 w-full"></select>
+                        </label>
+                    </div>
+                    <div class="mt-4">
+                        <span class="label-sm block">Dimension</span>
+                        <div id="dim-seg" class="seg mt-1" role="group" aria-label="Evaluation dimension"></div>
+                    </div>
+
+                    <div class="mt-6 grid gap-6 md:grid-cols-5">
+                        <!-- Left: summary, ratings, reviews -->
+                        <div class="md:col-span-2 space-y-5 min-w-0">
+                            <div>
+                                <span class="label-sm">Summary</span>
+                                <p id="summary-text" class="mt-1.5 text-sm leading-relaxed text-gray-800 dark:text-gray-200"></p>
+                            </div>
+                            <div>
+                                <span class="label-sm">Human rating</span>
+                                <div class="mt-1 flex items-baseline gap-2">
+                                    <span id="rating-big" class="text-4xl font-semibold text-gray-900 dark:text-white"></span>
+                                    <span class="text-sm text-gray-500 dark:text-gray-400">/ 5</span>
+                                </div>
+                                <p id="rating-raters" class="text-xs text-gray-500 dark:text-gray-400 mt-0.5"></p>
+                                <div id="dim-rows" class="mt-3 space-y-0.5" role="group" aria-label="Average human rating per dimension"></div>
+                            </div>
+                            <details open>
+                                <summary class="label-sm cursor-pointer select-none">Reviews (8)</summary>
+                                <ol id="review-list" class="review-list mt-2 space-y-2 text-xs leading-relaxed text-gray-600 dark:text-gray-400 list-decimal pl-5 pr-2"></ol>
+                            </details>
+                        </div>
+
+                        <!-- Right: the prompt -->
+                        <div class="md:col-span-3 min-w-0">
+                            <div class="flex flex-wrap items-center justify-between gap-2">
+                                <span class="label-sm">Prompt</span>
+                                <div id="approach-seg" class="seg" role="group" aria-label="Prompt approach"></div>
+                            </div>
+                            <p id="approach-note" class="mt-2 text-xs text-gray-500 dark:text-gray-400"></p>
+                            <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+                                <p id="diff-note" class="text-xs text-gray-600 dark:text-gray-300" aria-live="polite"></p>
+                                <button id="copy-prompt" class="copy-btn" style="position: static;">Copy filled prompt</button>
+                            </div>
+                            <div id="prompt-view" class="prompt-view mt-2" tabindex="0" aria-label="Prompt text"></div>
+                        </div>
+                    </div>
+
+                    <p class="demo-note mt-5">
+                        Reviews, summaries, per-rater scores and prompts are from the released <a class="accent" href="https://github.com/tjsiledar/SummEval-OP" target="_blank" rel="noopener noreferrer">SummEval-OP</a> files. Each summary was rated 1&ndash;5 by three expert raters; product names are short descriptions added for this page.
+                    </p>
+                </div>
+            </section>
+
+            <section id="abstract" class="scroll-mt-20">
+                <h2 class="section-title">Abstract</h2>
+                <!-- Verbatim from the paper (acl_latex.tex, \begin{abstract}) -->
+                <p class="mt-5 leading-relaxed text-gray-700 dark:text-gray-300">
+                    Evaluation of opinion summaries using conventional reference-based metrics often fails to provide a comprehensive assessment and exhibits limited correlation with human judgments. While Large Language Models (LLMs) have shown promise as reference-free metrics for NLG evaluation, their potential remains unexplored for opinion summary evaluation. Furthermore, the absence of sufficient opinion summary evaluation datasets hinders progress in this area. In response, we introduce the SummEval-Op dataset, encompassing 7 dimensions crucial to the evaluation of opinion summaries: fluency, coherence, relevance, faithfulness, aspect coverage, sentiment consistency, and specificity. We propose Op-I-Prompt, a dimension-independent prompt, along with Op-Prompts, a dimension-dependent set of prompts for opinion summary evaluation. Our experiments demonstrate that Op-I-Prompt emerges as a good alternative for evaluating opinion summaries, achieving an average Spearman correlation of 0.70 with human judgments, surpassing prior methodologies. Remarkably, we are the first to explore the efficacy of LLMs as evaluators, both on closed-source and open-source models, in the opinion summary evaluation domain.
+                </p>
+            </section>
+
+            <section id="method" class="scroll-mt-20">
+                <h2 class="section-title">Method</h2>
+                <!-- Figure 2 of the paper; caption condensed from it. Scoring: Section 3.3 and Implementation Details -->
+                <figure class="figure mt-5">
+                    <img src="prompt-approaches.png" alt="Three prompt approaches side by side. G-Eval generates its evaluation steps from the criteria with auto chain-of-thought. Op-I-Prompt keeps the task description, evaluation criteria and evaluation steps fixed, and only the Metric block changes. Op-Prompts write the criteria and steps specifically for each dimension." loading="lazy" class="w-full">
+                    <figcaption>G-Eval generates its evaluation steps with auto chain-of-thought. Op-I-Prompt fixes the task description, criteria and steps, so only the Metric block changes between dimensions. Op-Prompts are written separately for each dimension.</figcaption>
+                </figure>
+                <p class="mt-5 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                    Each prompt asks for an explanation followed by a 1&ndash;5 score. The final score is the mean over <em>n</em>&nbsp;=&nbsp;100 sampled responses (temperature 0.7), which estimates the probability-weighted score <em>o</em>&nbsp;=&nbsp;&Sigma;<sub><em>k</em></sub>&nbsp;<em>p</em>(<em>s<sub>k</sub></em>)&nbsp;&times;&nbsp;<em>s<sub>k</sub></em> used by G-Eval.
+                </p>
+            </section>
+
+            <section id="example" class="scroll-mt-20">
+                <h2 class="section-title">One Summary, Two Prompts</h2>
+                <!-- Table 4 ("Comparative Analysis"): responses and average scores are quoted from the paper -->
+                <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                    Sample responses for the same summary (LS-Sum-G, leather boots) on aspect coverage, from the paper. The summary leaves out aspects the reviews discuss at length; G-Eval misses this, Op-I-Prompt does not.
+                </p>
+                <div id="example-chart" class="mt-5 relative"></div>
+                <div class="mt-5 grid gap-4 md:grid-cols-2">
+                    <div class="rounded-lg border border-gray-200 dark:border-gray-800 p-4">
+                        <p class="label-sm">G-Eval response</p>
+                        <p class="response mt-2 text-gray-700 dark:text-gray-300"><span class="score-tag">&lt;score&gt;5&lt;/score&gt;</span> Explanation: The summary covers all the major aspects discussed in the reviews, including the comfort and break-in period of the boots. It also mentions that the boots take a little while to break in, which is a common theme among the reviews. Therefore, the summary receives a high rating for its aspect coverage.</p>
+                    </div>
+                    <div class="rounded-lg border p-4" style="border-color: var(--accent);">
+                        <p class="label-sm">Op-I-Prompt response</p>
+                        <p class="response mt-2 text-gray-700 dark:text-gray-300">The metric for evaluation is Aspect Coverage. The summary should cover all the aspects that are majorly being discussed in the reviews. The reviews mention the following aspects: comfort and break-in period. The summary states &ldquo;I love Frye boots. They are the most comfortable boots I have ever worn.&rdquo; This covers the comfort aspect. The summary also states &ldquo;They do take a little while to break in, but they are worth the wait.&rdquo; This covers the break-in period aspect. However, the summary does not mention anything about the durability, fit and appearance aspects. Since these aspects were majorly being discussed in the reviews, the summary does not follow the metric completely. Score- <span class="score-tag">&lt;score&gt;2&lt;/score&gt;</span> The summary only follows the metric to a limited extent while generating the summary from the reviews.</p>
+                    </div>
+                </div>
+                <button id="open-example" class="pill mt-4"><i class="fas fa-arrow-up"></i> Open this summary in the demo</button>
+            </section>
+
+            <section id="results" class="scroll-mt-20">
+                <h2 class="section-title">Results</h2>
+                <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                    Summary-level correlation of each metric with human ratings. On SummEval-Op, reference-based metrics correlate negatively; Op-I-Prompt is on par with G-Eval when ChatGPT-3.5 is the evaluator, and ahead of it on all seven dimensions with the open-source Mistral-7B.
+                </p>
+
+                <div class="mt-5 flex flex-wrap items-end gap-x-5 gap-y-3">
+                    <div>
+                        <span class="label-sm block">Benchmark</span>
+                        <div id="bench-seg" class="seg mt-1" role="group" aria-label="Benchmark"></div>
+                    </div>
+                    <div>
+                        <span class="label-sm block">Correlation</span>
+                        <div id="corr-seg" class="seg mt-1" role="group" aria-label="Correlation measure"></div>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <span class="label-sm block">Dimension</span>
+                    <div id="rdim-seg" class="seg mt-1" role="group" aria-label="Dimension"></div>
+                </div>
+
+                <div class="mt-5 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-gray-600 dark:text-gray-400" aria-hidden="true">
+                    <span class="inline-flex items-center gap-1.5"><span style="width:12px;height:12px;border-radius:3px;background:var(--accent);display:inline-block"></span>Prompts from this paper</span>
+                    <span class="inline-flex items-center gap-1.5"><span style="width:12px;height:12px;border-radius:3px;background:var(--series-3);display:inline-block"></span>Baselines</span>
+                    <span id="human-key" class="inline-flex items-center gap-1.5"><span style="width:2px;height:12px;background:var(--fg-strong);display:inline-block"></span>Human raters</span>
+                </div>
+                <div id="corr-chart" class="mt-3 relative"></div>
+                <p id="corr-caption" class="mt-3 text-xs text-gray-500 dark:text-gray-400"></p>
+                <details class="mt-3">
+                    <summary class="text-sm accent cursor-pointer select-none">Show as table</summary>
+                    <div class="mt-3 overflow-x-auto"><table id="corr-table" class="results"></table></div>
+                </details>
+
+                <h3 class="mt-12 font-semibold text-gray-900 dark:text-white">Human ratings of each summarizer</h3>
+                <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                    Average annotator rating (1&ndash;5) per dimension after the second annotation round. Click a dimension to sort.
+                </p>
+                <div class="mt-4 overflow-x-auto">
+                    <table id="heat-table" class="heat w-full border-separate" style="border-spacing:0"></table>
+                </div>
+                <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">From Table 3 of the paper. Human reference summaries were written in the first person, as reviews, so the comparison with LLM summaries is not conclusive.</p>
+            </section>
+
+            <section id="citation" class="scroll-mt-20">
+                <h2 class="section-title">Citation</h2>
+                <div class="bibtex mt-5"><button class="copy-btn" data-copy-target="bibtex-text">Copy</button><pre id="bibtex-text">@inproceedings{siledar-etal-2024-one,
+    title = "One Prompt To Rule Them All: {LLM}s for Opinion Summary Evaluation",
+    author = "Siledar, Tejpalsingh  and
+      Nath, Swaroop  and
+      Muddu, Sankara  and
+      Rangaraju, Rupasai  and
+      Nath, Swaprava  and
+      Bhattacharyya, Pushpak  and
+      Banerjee, Suman  and
+      Patil, Amey  and
+      Singh, Sudhanshu  and
+      Chelliah, Muthusamy  and
+      Garera, Nikesh",
+    editor = "Ku, Lun-Wei  and
+      Martins, Andre  and
+      Srikumar, Vivek",
+    booktitle = "Proceedings of the 62nd Annual Meeting of the {A}ssociation for {C}omputational {L}inguistics (Volume 1: Long Papers)",
+    month = aug,
+    year = "2024",
+    address = "Bangkok, Thailand",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.acl-long.655/",
+    doi = "10.18653/v1/2024.acl-long.655",
+    pages = "12119--12134"
+}</pre></div>
+            </section>
+        </div>
+    </main>
+
+    <script src="summeval-op-data.js"></script>
+    <script>
+    (function () {
+        const DATA = window.SUMMEVAL_OP;
+        const DIMS = [
+            { key: 'fl', name: 'Fluency', short: 'FL' },
+            { key: 'co', name: 'Coherence', short: 'CO' },
+            { key: 're', name: 'Relevance', short: 'RE' },
+            { key: 'fa', name: 'Faithfulness', short: 'FA' },
+            { key: 'ac', name: 'Aspect coverage', short: 'AC' },
+            { key: 'sc', name: 'Sentiment consistency', short: 'SC' },
+            { key: 'sp', name: 'Specificity', short: 'SP' },
+        ];
+        const dimIndex = (key) => DIMS.findIndex((d) => d.key === key);
+        const APPROACHES = [
+            { key: 'opi', name: 'Op-I-Prompt', note: 'Ours. Task description, criteria and steps are shared by every dimension; only the Metric block changes.' },
+            { key: 'op', name: 'Op-Prompts', note: 'Ours. A separate prompt written for each dimension, with its own score rubric and steps.' },
+            { key: 'geval', name: 'G-Eval', note: 'Baseline. Evaluation steps generated per dimension with auto chain-of-thought (Liu et al., 2023).' },
+        ];
+        const el = (tag, cls, text) => {
+            const n = document.createElement(tag);
+            if (cls) n.className = cls;
+            if (text !== undefined) n.textContent = text;
+            return n;
+        };
+        const SVGNS = 'http://www.w3.org/2000/svg';
+        const svgEl = (tag, attrs) => {
+            const n = document.createElementNS(SVGNS, tag);
+            for (const k in attrs) n.setAttribute(k, attrs[k]);
+            return n;
+        };
+        const fmt = (v) => (v < 0 ? '−' : '') + Math.abs(v).toFixed(2);
+
+        function segmented(container, items, current, onPick) {
+            container.textContent = '';
+            items.forEach((it) => {
+                const b = el('button', '', it.label);
+                b.type = 'button';
+                b.setAttribute('aria-pressed', String(it.key === current));
+                if (it.disabled) { b.disabled = true; b.style.opacity = '0.4'; b.title = it.disabledTitle || ''; }
+                b.addEventListener('click', () => onPick(it.key));
+                container.appendChild(b);
+            });
+        }
+
+        // ------------------------------------------------------------------
+        // Demo: dataset browser + prompt viewer
+        // ------------------------------------------------------------------
+        // Default to the paper's worked example: leather boots, LS-Sum-G, aspect coverage (Table 4)
+        const state = { product: 0, source: 3, dim: 'ac', approach: 'opi', compareTo: 'fl' };
+
+        const productSelect = document.getElementById('product-select');
+        DATA.products.forEach((p, i) => {
+            const o = el('option', '', (i + 1) + '. ' + p.label);
+            o.value = String(i);
+            productSelect.appendChild(o);
+        });
+        productSelect.addEventListener('change', () => { state.product = +productSelect.value; renderDemo(false); });
+
+        const sourceSelect = document.getElementById('source-select');
+        const groups = {};
+        DATA.sources.forEach((s, i) => {
+            const label = s.group === 'Reference' ? 'Reference' : s.group === 'Pre-LLM' ? 'Pre-LLM models' : 'LLMs';
+            if (!groups[label]) { groups[label] = el('optgroup'); groups[label].label = label; sourceSelect.appendChild(groups[label]); }
+            const o = el('option', '', s.name);
+            o.value = String(i);
+            groups[label].appendChild(o);
+        });
+        sourceSelect.addEventListener('change', () => { state.source = +sourceSelect.value; renderDemo(false); });
+
+        function setDim(key) {
+            if (key === state.dim) return;
+            state.compareTo = state.dim;
+            state.dim = key;
+            renderDemo(true);
+        }
+
+        // Line diff (LCS) so the viewer can mark what changed between two dimensions
+        function changedLines(oldLines, newLines) {
+            const a = oldLines.map((s) => s.trimEnd()), b = newLines.map((s) => s.trimEnd());
+            const n = a.length, m = b.length;
+            const dp = Array.from({ length: n + 1 }, () => new Int16Array(m + 1));
+            for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) {
+                dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+            }
+            const changed = new Set();
+            let i = 0, j = 0;
+            while (j < m) {
+                if (i < n && a[i] === b[j]) { i++; j++; }
+                else if (i < n && dp[i + 1][j] >= dp[i][j + 1]) { i++; }
+                else { changed.add(j); j++; }
+            }
+            return changed;
+        }
+
+        function renderPrompt() {
+            const text = DATA.prompts[state.approach][state.dim];
+            const lines = text.split('\n');
+            const prev = DATA.prompts[state.approach][state.compareTo].split('\n');
+            const changed = state.compareTo === state.dim ? new Set() : changedLines(prev, lines);
+            const view = document.getElementById('prompt-view');
+            view.textContent = '';
+            let slot = 0;
+            let changedCount = 0;
+            lines.forEach((line, i) => {
+                const div = el('div', 'ln');
+                if (line.trim() === '{}') {
+                    const chip = el('span', 'slot', slot === 0 ? '8 reviews of this product' : 'the selected summary');
+                    div.appendChild(chip);
+                    slot++;
+                } else {
+                    div.textContent = line;
+                    if (/^[A-Z][A-Za-z ]+:\s*$/.test(line)) div.classList.add('head');
+                }
+                if (changed.has(i) && line.trim() !== '') { div.classList.add('chg'); changedCount++; }
+                view.appendChild(div);
+            });
+            // Bring the first changed line into view inside the prompt box (the page itself does not scroll)
+            const first = view.querySelector('.ln.chg');
+            view.scrollTop = first ? Math.max(0, first.offsetTop - view.clientHeight / 3) : 0;
+            const nonEmpty = lines.filter((l) => l.trim() !== '').length;
+            const fromName = DIMS[dimIndex(state.compareTo)].name;
+            document.getElementById('diff-note').textContent = state.compareTo === state.dim ? '' :
+                changedCount + ' of ' + nonEmpty + ' lines differ from the ' + fromName.toLowerCase() + ' prompt (highlighted).';
+            const appr = APPROACHES.find((a) => a.key === state.approach);
+            document.getElementById('approach-note').textContent = appr.note;
+        }
+
+        function filledPrompt() {
+            const p = DATA.products[state.product];
+            const tpl = DATA.prompts[state.approach][state.dim];
+            // Same substitution as the released evaluator: reviews joined by newlines, then the summary
+            let k = 0;
+            return tpl.replace(/\{\}/g, () => (k++ === 0 ? p.reviews.join('\n') : p.summaries[state.source]));
+        }
+
+        function renderDemo(dimChanged) {
+            const p = DATA.products[state.product];
+            productSelect.value = String(state.product);
+            sourceSelect.value = String(state.source);
+            document.getElementById('summary-text').textContent = p.summaries[state.source];
+
+            const ratings = p.ratings[state.source];
+            const di = dimIndex(state.dim);
+            const r = ratings[di];
+            const avg = (r[0] + r[1] + r[2]) / 3;
+            document.getElementById('rating-big').textContent = avg.toFixed(2);
+            document.getElementById('rating-raters').textContent = DIMS[di].name + ' · raters gave ' + r.join(', ');
+
+            const rows = document.getElementById('dim-rows');
+            rows.textContent = '';
+            DIMS.forEach((d, i) => {
+                const rr = ratings[i];
+                const a = (rr[0] + rr[1] + rr[2]) / 3;
+                const b = el('button', 'dim-row');
+                b.type = 'button';
+                b.setAttribute('aria-pressed', String(d.key === state.dim));
+                b.setAttribute('aria-label', d.name + ': ' + a.toFixed(2) + ' out of 5 (raters ' + rr.join(', ') + ')');
+                b.title = 'Raters: ' + rr.join(', ');
+                b.appendChild(el('span', '', d.name));
+                const track = el('span', 'track');
+                const fill = el('span', 'fill');
+                fill.style.display = 'block';
+                fill.style.width = (a / 5 * 100) + '%';
+                track.appendChild(fill);
+                b.appendChild(track);
+                b.appendChild(el('span', 'val', a.toFixed(2)));
+                b.addEventListener('click', () => setDim(d.key));
+                rows.appendChild(b);
+            });
+
+            const list = document.getElementById('review-list');
+            list.textContent = '';
+            p.reviews.forEach((rv) => list.appendChild(el('li', '', rv)));
+
+            segmented(document.getElementById('dim-seg'), DIMS.map((d) => ({ key: d.key, label: d.name })), state.dim, setDim);
+            segmented(document.getElementById('approach-seg'), APPROACHES.map((a) => ({ key: a.key, label: a.name })), state.approach, (k) => { state.approach = k; renderDemo(false); });
+            renderPrompt();
+        }
+
+        document.getElementById('copy-prompt').addEventListener('click', (e) => {
+            const btn = e.currentTarget;
+            navigator.clipboard.writeText(filledPrompt()).then(() => {
+                btn.textContent = 'Copied';
+                setTimeout(() => { btn.textContent = 'Copy filled prompt'; }, 1500);
+            });
+        });
+
+        document.getElementById('open-example').addEventListener('click', () => {
+            Object.assign(state, { product: 0, source: 3, dim: 'ac', approach: 'opi', compareTo: 'fl' });
+            renderDemo(false);
+            document.getElementById('demo').scrollIntoView({ behavior: 'smooth' });
+        });
+
+        renderDemo(false);
+
+        // ------------------------------------------------------------------
+        // Shared tooltip helper
+        // ------------------------------------------------------------------
+        function tooltip(host) {
+            const tip = el('div', 'chart-tip');
+            tip.style.display = 'none';
+            host.appendChild(tip);
+            return {
+                show(evtOrNode, valueText, labelText) {
+                    tip.textContent = '';
+                    const s = el('strong', '', valueText);
+                    tip.appendChild(s);
+                    tip.appendChild(document.createTextNode('  ' + labelText));
+                    tip.style.display = 'block';
+                    const hostBox = host.getBoundingClientRect();
+                    let x, y;
+                    if (evtOrNode.clientX !== undefined) { x = evtOrNode.clientX - hostBox.left; y = evtOrNode.clientY - hostBox.top; }
+                    else { const b = evtOrNode.getBoundingClientRect(); x = b.left + b.width / 2 - hostBox.left; y = b.top - hostBox.top; }
+                    const w = tip.offsetWidth;
+                    tip.style.left = Math.max(0, Math.min(hostBox.width - w, x - w / 2)) + 'px';
+                    tip.style.top = Math.max(0, y - tip.offsetHeight - 10) + 'px';
+                },
+                hide() { tip.style.display = 'none'; },
+            };
+        }
+
+        // ------------------------------------------------------------------
+        // Worked example: three scores on one 1-5 axis (Table 4 averages)
+        // ------------------------------------------------------------------
+        function renderExample() {
+            const host = document.getElementById('example-chart');
+            host.textContent = '';
+            const W = host.clientWidth || 600;
+            const rows = [
+                { label: 'Annotators', v: 2.33, color: cssVar('--fg-strong') },
+                { label: 'Op-I-Prompt', v: 2.72, color: cssVar('--accent') },
+                { label: 'G-Eval', v: 4.09, color: cssVar('--series-3') },
+            ];
+            const left = 96, right = 18, top = 6, rowH = 30, axisH = 26;
+            const H = top + rows.length * rowH + axisH;
+            const x = (v) => left + (v - 1) / 4 * (W - left - right);
+            const svg = svgEl('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, role: 'img', 'aria-label': 'Average aspect-coverage score for the example summary: annotators 2.33, Op-I-Prompt 2.72, G-Eval 4.09, on a 1 to 5 scale.' });
+            const grid = cssVar('--line'), muted = cssVar('--muted'), surface = cssVar('--surface');
+            for (let t = 1; t <= 5; t++) {
+                svg.appendChild(svgEl('line', { x1: x(t), x2: x(t), y1: top, y2: top + rows.length * rowH, stroke: grid, 'stroke-width': 1 }));
+                const tx = svgEl('text', { x: x(t), y: H - 8, 'text-anchor': 'middle', 'font-size': 11, fill: muted });
+                tx.textContent = String(t);
+                svg.appendChild(tx);
+            }
+            rows.forEach((r, i) => {
+                const cy = top + i * rowH + rowH / 2;
+                const lab = svgEl('text', { x: 0, y: cy + 4, 'font-size': 12, fill: cssVar('--fg') });
+                lab.textContent = r.label;
+                svg.appendChild(lab);
+                svg.appendChild(svgEl('line', { x1: x(1), x2: x(r.v), y1: cy, y2: cy, stroke: grid, 'stroke-width': 2 }));
+                svg.appendChild(svgEl('circle', { cx: x(r.v), cy: cy, r: 6, fill: r.color, stroke: surface, 'stroke-width': 2 }));
+                const val = svgEl('text', { x: x(r.v) + (r.v > 4.6 ? -12 : 12), y: cy + 4, 'text-anchor': r.v > 4.6 ? 'end' : 'start', 'font-size': 12, 'font-weight': 600, fill: cssVar('--fg-strong') });
+                val.textContent = r.v.toFixed(2);
+                svg.appendChild(val);
+            });
+            host.appendChild(svg);
+        }
+
+        // ------------------------------------------------------------------
+        // Results: correlation bars (Table 2 = SummEval-Op Round-I, Table 7 = OpinSummEval)
+        // Each entry: [rho, tau] per dimension, null where the paper reports none.
+        // ------------------------------------------------------------------
+        const SUMMEVAL = {
+            dims: ['fl', 'co', 're', 'fa', 'ac', 'sc', 'sp'],
+            human: { fl: [0.80, 0.77], co: [0.81, 0.76], re: [0.91, 0.86], fa: [0.89, 0.85], ac: [0.93, 0.87], sc: [0.91, 0.85], sp: [0.92, 0.87] },
+            rows: [
+                { group: 'Reference-based', name: 'ROUGE-1', v: [[-0.36, -0.28], [-0.30, -0.24], [-0.31, -0.23], [-0.35, -0.26], [-0.44, -0.32], [-0.38, -0.29], [-0.30, -0.23]] },
+                { group: 'Reference-based', name: 'ROUGE-2', v: [[-0.23, -0.18], [-0.14, -0.10], [-0.17, -0.12], [-0.21, -0.16], [-0.26, -0.19], [-0.24, -0.18], [-0.14, -0.09]] },
+                { group: 'Reference-based', name: 'ROUGE-L', v: [[-0.39, -0.32], [-0.30, -0.23], [-0.34, -0.25], [-0.40, -0.30], [-0.51, -0.37], [-0.45, -0.33], [-0.38, -0.27]] },
+                { group: 'Reference-based', name: 'BERTScore', v: [[-0.32, -0.27], [-0.28, -0.22], [-0.29, -0.22], [-0.34, -0.26], [-0.51, -0.43], [-0.41, -0.33], [-0.37, -0.28]] },
+                { group: 'Reference-free', name: 'BARTScore', v: [[-0.19, -0.15], [-0.19, -0.14], [-0.29, -0.22], [-0.33, -0.25], [-0.45, -0.35], [-0.37, -0.28], [-0.36, -0.27]] },
+                { group: 'Reference-free', name: 'SummaC', v: [[0.23, 0.20], [0.18, 0.14], [0.30, 0.25], [0.25, 0.21], [0.24, 0.19], [0.25, 0.20], [0.26, 0.21]] },
+                { group: 'Reference-free', name: 'UniEval', v: [[0.36, 0.28], [0.52, 0.42], [0.33, 0.25], [0.17, 0.14], null, null, null] },
+                { group: 'ChatGPT-3.5 as evaluator', name: 'G-Eval-3.5', v: [[0.63, 0.55], [0.59, 0.49], [0.68, 0.56], [0.70, 0.58], [0.79, 0.67], [0.73, 0.61], [0.75, 0.63]] },
+                { group: 'ChatGPT-3.5 as evaluator', name: 'Op-I-GPT-3.5', ours: true, v: [[0.60, 0.51], [0.61, 0.51], [0.69, 0.56], [0.71, 0.59], [0.80, 0.68], [0.73, 0.61], [0.74, 0.61]] },
+                { group: 'Mistral-7B as evaluator', name: 'G-Eval-Mistral', v: [[0.50, 0.43], [0.54, 0.45], [0.52, 0.42], [0.54, 0.44], [0.61, 0.49], [0.55, 0.46], [0.62, 0.50]] },
+                { group: 'Mistral-7B as evaluator', name: 'Op-Mistral', ours: true, v: [[0.38, 0.32], [0.58, 0.47], [0.56, 0.45], [0.57, 0.46], [0.80, 0.67], [0.60, 0.49], [0.75, 0.62]] },
+                { group: 'Mistral-7B as evaluator', name: 'Op-I-Mistral', ours: true, sig: [false, false, false, true, true, true, true], v: [[0.54, 0.45], [0.58, 0.47], [0.59, 0.47], [0.63, 0.51], [0.82, 0.70], [0.73, 0.61], [0.71, 0.58]] },
+            ],
+        };
+        // OpinSummEval reports four dimensions: readability, self-coherence, aspect relevance and
+        // sentiment consistency, which the paper maps to FL, CO, AC and SC (Appendix A).
+        const OPINSUMM = {
+            dims: ['fl', 'co', 'ac', 'sc'],
+            human: null,
+            rows: [
+                { group: 'Reference-based', name: 'ROUGE-1', rep: true, v: [[0.08, 0.06], [0.11, 0.09], [0.14, 0.11], [0.00, 0.00]] },
+                { group: 'Reference-based', name: 'ROUGE-2', rep: true, v: [[0.13, 0.10], [0.13, 0.11], [0.15, 0.11], [0.04, 0.04]] },
+                { group: 'Reference-based', name: 'ROUGE-L', rep: true, v: [[0.13, 0.10], [0.18, 0.15], [0.18, 0.14], [0.07, 0.05]] },
+                { group: 'Reference-based', name: 'BERTScore', rep: true, v: [[0.38, 0.30], [0.20, 0.17], [0.20, 0.16], [0.08, 0.06]] },
+                { group: 'Reference-free', name: 'BARTScore', rep: true, v: [[0.42, 0.33], [0.35, 0.29], [0.28, 0.22], [0.41, 0.34]] },
+                { group: 'Reference-free', name: 'SummaC', rep: true, v: [[0.06, 0.05], [0.02, 0.01], [0.07, 0.06], [0.20, 0.17]] },
+                { group: 'ChatGPT-3.5 as evaluator', name: 'ChatGPT-3.5', rep: true, v: [[0.47, 0.42], [0.28, 0.25], [0.34, 0.30], [0.37, 0.33]] },
+                { group: 'ChatGPT-3.5 as evaluator', name: 'G-Eval-3.5', rep: true, v: [[0.41, 0.36], [0.29, 0.26], [0.27, 0.23], [0.38, 0.34]] },
+                { group: 'ChatGPT-3.5 as evaluator', name: 'Op-I-GPT-3.5', ours: true, v: [[0.51, 0.46], [0.36, 0.32], [0.33, 0.29], [0.43, 0.39]] },
+                { group: 'Mistral-7B as evaluator', name: 'G-Eval-Mistral', v: [[0.46, 0.41], [0.41, 0.38], [0.36, 0.32], [0.49, 0.45]] },
+                { group: 'Mistral-7B as evaluator', name: 'Op-Mistral', ours: true, v: [[0.35, 0.33], [0.45, 0.41], [0.34, 0.30], [0.45, 0.41]] },
+                { group: 'Mistral-7B as evaluator', name: 'Op-I-Mistral', ours: true, v: [[0.46, 0.41], [0.37, 0.35], [0.38, 0.34], [0.49, 0.45]] },
+            ],
+        };
+        const rstate = { bench: 'summeval', corr: 0, dim: 'ac' };
+
+        // Value for a row on the current selection; 'avg' is the mean over the benchmark's dimensions
+        function valueOf(bench, row, dim, corr) {
+            if (dim === 'avg') {
+                if (row.v.some((x) => x === null)) return null;
+                return row.v.reduce((s, x) => s + x[corr], 0) / row.v.length;
+            }
+            const x = row.v[bench.dims.indexOf(dim)];
+            return x ? x[corr] : null;
+        }
+
+        function renderCorr() {
+            const bench = rstate.bench === 'summeval' ? SUMMEVAL : OPINSUMM;
+            if (rstate.dim !== 'avg' && bench.dims.indexOf(rstate.dim) < 0) rstate.dim = 'avg';
+
+            segmented(document.getElementById('bench-seg'), [{ key: 'summeval', label: 'SummEval-Op' }, { key: 'opinsumm', label: 'OpinSummEval' }], rstate.bench, (k) => { rstate.bench = k; renderCorr(); });
+            segmented(document.getElementById('corr-seg'), [{ key: 0, label: 'Spearman ρ' }, { key: 1, label: 'Kendall τ' }], rstate.corr, (k) => { rstate.corr = k; renderCorr(); });
+            const dimItems = [{ key: 'avg', label: 'Average' }].concat(DIMS.map((d) => ({
+                key: d.key, label: d.name, disabled: bench.dims.indexOf(d.key) < 0, disabledTitle: 'Not annotated in OpinSummEval',
+            })));
+            segmented(document.getElementById('rdim-seg'), dimItems, rstate.dim, (k) => { rstate.dim = k; renderCorr(); });
+
+            const host = document.getElementById('corr-chart');
+            host.textContent = '';
+            const tip = tooltip(host);
+            const W = host.clientWidth || 640;
+            const narrow = W < 520;
+            const labelW = narrow ? 104 : 132, right = 40, leftPad = 8;
+            const groupH = 22, rowH = 26, barH = 14, axisH = 24, topPad = 18;
+            const dom = [-0.6, 1.0];
+            const x = (v) => labelW + leftPad + (v - dom[0]) / (dom[1] - dom[0]) * (W - labelW - leftPad - right);
+
+            // Layout rows with group headers
+            const layout = [];
+            let y = topPad;
+            let lastGroup = null;
+            bench.rows.forEach((row) => {
+                if (row.group !== lastGroup) { layout.push({ header: row.group, y: y }); y += groupH; lastGroup = row.group; }
+                layout.push({ row: row, y: y });
+                y += rowH;
+            });
+            const H = y + axisH;
+            const svg = svgEl('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, role: 'img' });
+            const grid = cssVar('--line'), muted = cssVar('--muted'), fg = cssVar('--fg'), strong = cssVar('--fg-strong');
+            const dimName = rstate.dim === 'avg' ? 'average over dimensions' : DIMS[dimIndex(rstate.dim)].name.toLowerCase();
+            svg.setAttribute('aria-label', (rstate.corr ? 'Kendall tau' : 'Spearman rho') + ' with human ratings on ' + (rstate.bench === 'summeval' ? 'SummEval-Op' : 'OpinSummEval') + ', ' + dimName + '. Values are listed in the table below.');
+
+            [-0.5, 0, 0.5, 1.0].forEach((t) => {
+                svg.appendChild(svgEl('line', { x1: x(t), x2: x(t), y1: topPad - 6, y2: H - axisH, stroke: grid, 'stroke-width': t === 0 ? 1.5 : 1 }));
+                const tx = svgEl('text', { x: x(t), y: H - 8, 'text-anchor': 'middle', 'font-size': 11, fill: muted });
+                tx.textContent = { '-0.5': '−0.5', '0': '0', '0.5': '0.5', '1': '1.0' }[String(t)];
+                svg.appendChild(tx);
+            });
+
+            // Human reference line (SummEval-Op only; the "Humans" row of Table 2), drawn first so bars and labels sit on top
+            const humanKey = document.getElementById('human-key');
+            if (bench.human && rstate.dim !== 'avg') {
+                const hv = bench.human[rstate.dim][rstate.corr];
+                svg.appendChild(svgEl('line', { x1: x(hv), x2: x(hv), y1: topPad - 4, y2: H - axisH, stroke: strong, 'stroke-width': 1.5 }));
+                const ht = svgEl('text', { x: x(hv), y: topPad - 7, 'text-anchor': 'end', 'font-size': 11, fill: strong });
+                ht.textContent = 'Human raters ' + fmt(hv);
+                svg.appendChild(ht);
+                humanKey.style.visibility = 'visible';
+            } else {
+                humanKey.style.visibility = 'hidden';
+            }
+
+            layout.forEach((item) => {
+                if (item.header) {
+                    const h = svgEl('text', { x: 0, y: item.y + 15, 'font-size': 10.5, 'font-weight': 600, fill: muted, 'letter-spacing': '0.04em' });
+                    h.textContent = item.header.toUpperCase();
+                    svg.appendChild(h);
+                    return;
+                }
+                const row = item.row;
+                const v = valueOf(bench, row, rstate.dim, rstate.corr);
+                const cy = item.y + rowH / 2;
+                const lab = svgEl('text', { x: 0, y: cy + 4, 'font-size': 12, fill: row.ours ? strong : fg, 'font-weight': row.ours ? 600 : 400 });
+                lab.textContent = row.name + (row.rep ? ' †' : '');
+                svg.appendChild(lab);
+
+                const g = svgEl('g', { class: 'bar-hit', tabindex: 0 });
+                const dimIdx = bench.dims.indexOf(rstate.dim);
+                const star = row.sig && dimIdx >= 0 && row.sig[dimIdx] ? '*' : '';
+                const tipLabel = row.name + (rstate.dim === 'avg' ? ' (mean of ' + bench.dims.length + ' dimensions)' : '');
+                if (v === null) {
+                    const na = svgEl('text', { x: x(0) + 6, y: cy + 4, 'font-size': 11, fill: muted });
+                    na.textContent = 'not reported';
+                    g.appendChild(na);
+                } else {
+                    const x0 = x(0), x1 = x(v);
+                    const w = Math.max(1, Math.abs(x1 - x0));
+                    const r = Math.min(4, w / 2);
+                    const top = cy - barH / 2, bot = cy + barH / 2;
+                    // Square at the baseline, 4px rounded data end
+                    const d = v >= 0
+                        ? `M${x0},${top} H${x1 - r} Q${x1},${top} ${x1},${top + r} V${bot - r} Q${x1},${bot} ${x1 - r},${bot} H${x0} Z`
+                        : `M${x0},${top} H${x1 + r} Q${x1},${top} ${x1},${top + r} V${bot - r} Q${x1},${bot} ${x1 + r},${bot} H${x0} Z`;
+                    g.appendChild(svgEl('path', { d: d, fill: row.ours ? cssVar('--accent') : cssVar('--series-3') }));
+                    const val = svgEl('text', { class: 'val-halo', x: v >= 0 ? x1 + 5 : x1 - 5, y: cy + 4, 'text-anchor': v >= 0 ? 'start' : 'end', 'font-size': 11.5, fill: strong, 'font-variant-numeric': 'tabular-nums' });
+                    val.textContent = fmt(v) + star;
+                    g.appendChild(val);
+                }
+                // Hit area: the full row, bigger than the bar
+                g.insertBefore(svgEl('rect', { class: 'hit', x: labelW, y: item.y + 1, width: W - labelW, height: rowH - 2, fill: 'transparent', rx: 4 }), g.firstChild);
+                const valueText = v === null ? 'n/a' : fmt(v) + star;
+                g.setAttribute('aria-label', row.name + ': ' + valueText);
+                g.addEventListener('pointermove', (e) => tip.show(e, valueText, tipLabel));
+                g.addEventListener('pointerleave', () => tip.hide());
+                g.addEventListener('focus', () => tip.show(g, valueText, tipLabel));
+                g.addEventListener('blur', () => tip.hide());
+                svg.appendChild(g);
+            });
+
+            host.appendChild(svg);
+
+            const cap = document.getElementById('corr-caption');
+            cap.textContent = rstate.bench === 'summeval'
+                ? 'SummEval-Op, first annotation round (paper Table 2). Human raters: each annotator’s average correlation with the mean rating. * significantly better than G-Eval-Mistral (Mann-Whitney U, p < 0.05). Average = mean over the dimensions, computed from the table.'
+                : 'OpinSummEval (Shen et al., 2023), whose readability, self-coherence, aspect relevance and sentiment consistency map to fluency, coherence, aspect coverage and sentiment consistency (paper Table 7). † as reported by Shen et al. Average = mean over the four dimensions, computed from the table.';
+
+            renderCorrTable(bench);
+        }
+
+        function renderCorrTable(bench) {
+            const t = document.getElementById('corr-table');
+            t.textContent = '';
+            const sym = rstate.corr ? 'τ' : 'ρ';
+            const thead = el('thead');
+            const hr = el('tr');
+            hr.appendChild(el('th', '', 'Metric (' + sym + ')'));
+            bench.dims.forEach((d) => { const th = el('th', 'num', DIMS[dimIndex(d)].short); th.title = DIMS[dimIndex(d)].name; hr.appendChild(th); });
+            thead.appendChild(hr);
+            t.appendChild(thead);
+            const tb = el('tbody');
+            if (bench.human) {
+                const tr = el('tr');
+                tr.appendChild(el('td', '', 'Human raters'));
+                bench.dims.forEach((d) => tr.appendChild(el('td', 'num', bench.human[d][rstate.corr].toFixed(2))));
+                tb.appendChild(tr);
+            }
+            bench.rows.forEach((row) => {
+                const tr = el('tr', row.ours ? 'ours' : '');
+                tr.appendChild(el('td', '', row.name + (row.rep ? ' †' : '')));
+                row.v.forEach((x, i) => tr.appendChild(el('td', 'num', x === null ? '–' : fmt(x[rstate.corr]) + (row.sig && row.sig[i] ? '*' : ''))));
+                tb.appendChild(tr);
+            });
+            t.appendChild(tb);
+        }
+
+        // ------------------------------------------------------------------
+        // Results: human ratings heatmap (Table 3, Round-II averages)
+        // ------------------------------------------------------------------
+        const RATINGS = [
+            ['Human reference', [4.39, 4.41, 3.78, 3.98, 3.54, 3.71, 3.66]],
+            ['PlanSum', [1.86, 1.94, 1.60, 1.38, 1.52, 1.59, 1.56]],
+            ['MultimodalSum', [4.62, 4.09, 2.63, 2.27, 2.18, 2.76, 2.43]],
+            ['LS-Sum-G', [4.76, 4.40, 2.87, 2.74, 2.32, 3.03, 2.69]],
+            ['ChatGPT-3.5', [4.89, 4.58, 4.25, 4.71, 4.22, 4.16, 3.96]],
+            ['GPT-4', [5.00, 4.91, 3.52, 4.96, 4.93, 4.83, 4.57]],
+            ['LLaMA2-7B', [4.79, 4.34, 3.77, 4.49, 3.67, 3.79, 3.46]],
+            ['LLaMA2-13B', [4.87, 4.49, 4.25, 4.62, 4.02, 4.00, 3.94]],
+            ['Mistral-7B', [4.86, 4.60, 4.33, 4.66, 4.56, 4.35, 4.25]],
+            ['Vicuna-7B', [4.83, 4.23, 3.92, 4.35, 3.96, 3.92, 3.67]],
+            ['Vicuna-13B', [4.87, 4.41, 4.09, 4.43, 4.03, 4.00, 3.77]],
+            ['Solar-10.7B', [4.89, 4.73, 4.20, 4.72, 4.50, 4.56, 4.35]],
+            ['Zephyr-7B', [4.89, 4.36, 4.08, 4.54, 4.18, 3.95, 3.83]],
+        ];
+        const hstate = { sort: null };
+
+        function hexToRgb(h) {
+            h = h.replace('#', '');
+            if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+            return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+        }
+        function lum(rgb) {
+            const c = rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); });
+            return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+        }
+
+        function renderHeat() {
+            const t = document.getElementById('heat-table');
+            t.textContent = '';
+            const accent = hexToRgb(cssVar('--accent'));
+            const surf = hexToRgb(cssVar('--surface-2'));
+            const darkInk = '#030712', lightInk = '#ffffff';
+
+            const thead = el('thead');
+            const hr = el('tr');
+            hr.appendChild(el('th', 'text-left text-xs font-semibold pb-2', ''));
+            DIMS.forEach((d, i) => {
+                const th = el('th', 'pb-2 text-xs');
+                const b = el('button', '', d.short);
+                b.type = 'button';
+                b.title = 'Sort by ' + d.name;
+                b.setAttribute('aria-label', 'Sort by ' + d.name);
+                if (hstate.sort === i) b.setAttribute('aria-sort', 'descending');
+                b.addEventListener('click', () => { hstate.sort = hstate.sort === i ? null : i; renderHeat(); });
+                th.appendChild(b);
+                hr.appendChild(th);
+            });
+            thead.appendChild(hr);
+            t.appendChild(thead);
+
+            const rows = RATINGS.slice();
+            if (hstate.sort !== null) rows.sort((a, b) => b[1][hstate.sort] - a[1][hstate.sort]);
+            const tb = el('tbody');
+            rows.forEach(([name, vals]) => {
+                const tr = el('tr');
+                tr.appendChild(el('td', 'name', name));
+                vals.forEach((v, i) => {
+                    // One-hue sequential ramp: accent blended into the surface by rating (1 -> 5)
+                    const a = 0.06 + 0.56 * Math.max(0, (v - 1) / 4);
+                    const mix = accent.map((c, k) => Math.round(c * a + surf[k] * (1 - a)));
+                    const td = el('td', 'cell', v.toFixed(2));
+                    td.style.background = 'rgb(' + mix.join(',') + ')';
+                    const L = lum(mix);
+                    td.style.color = (1.05) / (L + 0.05) >= (L + 0.05) / (lum(hexToRgb(darkInk)) + 0.05) ? lightInk : darkInk;
+                    td.title = name + ' · ' + DIMS[i].name + ': ' + v.toFixed(2);
+                    tr.appendChild(td);
+                });
+                tb.appendChild(tr);
+            });
+            t.appendChild(tb);
+        }
+
+        function renderAllCharts() { renderExample(); renderCorr(); renderHeat(); }
+        renderAllCharts();
+        document.addEventListener('themechange', renderAllCharts);
+        let rt;
+        window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { renderExample(); renderCorr(); }, 120); });
+    })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer Expressivity &middot; Swaroop Nath</title>
+    <meta name="description" content="Transformers approximate functions with piecewise-constant steps, so they struggle to regress smooth functions.">
+    <meta property="og:title" content="Transformers are Expressive, But Are They Expressive Enough for Regression?">
+    <meta property="og:description" content="Transformers approximate functions with piecewise-constant steps, so they struggle to regress smooth functions.">
+    <meta property="og:image" content="https://swaroop-nath.github.io/transformer-expressivity/figures/frate-vs-layers.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['DM Sans', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'] } } },
+        }
+    </script>
+    <link rel="stylesheet" href="../assets/project.css">
+    <script src="../assets/project.js"></script>
+    <style>
+        /* The target function is a recessive reference line; the step approximation carries the accent */
+        :root { --ref: #6b7280; }
+        html.dark { --ref: #94a3b8; }
+
+        .chart-wrap { position: relative; }
+        .chart-wrap svg { display: block; width: 100%; height: auto; overflow: visible; }
+        .chart-wrap svg:focus { outline: none; }
+        .chart-wrap svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+
+        .tip {
+            position: absolute;
+            pointer-events: none;
+            min-width: 9.5rem;
+            padding: 0.5rem 0.65rem;
+            border: 1px solid var(--line);
+            border-radius: 0.5rem;
+            background: var(--surface);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+            font-size: 0.75rem;
+            line-height: 1.5;
+            color: var(--muted);
+        }
+        .tip .row { display: flex; align-items: center; gap: 0.45rem; }
+        .tip strong { color: var(--fg-strong); font-weight: 600; font-variant-numeric: tabular-nums; }
+        .key-line { display: inline-block; width: 14px; height: 0; border-top: 2px solid; flex-shrink: 0; }
+        .key-area { display: inline-block; width: 14px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+        .tile { border: 1px solid var(--line); border-radius: 0.5rem; background: var(--surface); padding: 0.75rem 0.9rem; }
+        .tile .label { color: var(--muted); font-size: 0.75rem; }
+        .tile .value { color: var(--fg-strong); font-size: 1.35rem; font-weight: 600; margin-top: 0.15rem; }
+        .tile .sub { color: var(--faint); font-size: 0.72rem; margin-top: 0.15rem; }
+        .fbar { text-decoration: overline; text-decoration-thickness: 1px; text-underline-offset: 0; }
+        .status-good { color: var(--good); }
+        .status-bad { color: var(--bad); }
+
+        .katex-block { overflow-x: auto; overflow-y: hidden; padding: 0.25rem 0; }
+        .katex { font-size: 1.05em; }
+        @media (max-width: 480px) { .katex-block .katex { font-size: 0.78em; } }
+
+        .values-table { width: 100%; font-size: 0.78rem; border-collapse: collapse; }
+        .values-table th { color: var(--muted); font-weight: 600; text-align: right; }
+        .values-table th, .values-table td { padding: 0.25rem 0.5rem; border-bottom: 1px solid var(--line); text-align: right; font-variant-numeric: tabular-nums; }
+        .values-table th:first-child, .values-table td:first-child { text-align: left; }
+
+        .result-fig { max-width: 680px; margin: 0 auto; }
+        .result-fig.narrow { max-width: 520px; }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-200">
+
+    <header class="bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+        <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <div>
+                <a href="../index.html" class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">Swaroop Nath</a>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="hidden sm:flex items-center space-x-5 text-sm text-gray-500 dark:text-gray-400">
+                    <a href="../index.html#about" class="hover:text-gray-900 dark:hover:text-white">About</a>
+                    <a href="../index.html#news" class="hover:text-gray-900 dark:hover:text-white">News</a>
+                    <a href="../index.html#publications" class="hover:text-gray-900 dark:hover:text-white">Publications</a>
+                    <a href="../talks.html" class="hover:text-gray-900 dark:hover:text-white">Talks</a>
+                </div>
+                <button id="theme-toggle-main" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400">
+                    <span id="theme-icon-container"><i data-lucide="moon" class="h-5 w-5"></i></span>
+                    <span class="sr-only">Toggle theme</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <a href="../index.html#publications" class="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+            <i data-lucide="arrow-left" class="h-4 w-4"></i> Publications
+        </a>
+
+        <div class="mt-6 text-center">
+            <span class="venue">arXiv 2024</span>
+            <h1 class="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight leading-tight text-gray-900 dark:text-white">Transformers are Expressive, But Are They Expressive Enough for Regression?</h1>
+            <p class="mt-5 text-gray-700 dark:text-gray-300 leading-relaxed">
+                <a href="../index.html" class="font-semibold text-gray-900 dark:text-white hover:underline">Swaroop Nath</a>,
+                <a href="https://www.cse.iitb.ac.in/~harshadk/" target="_blank" rel="noopener noreferrer" class="hover:underline">Harshad Khadilkar</a>,
+                <a href="https://en.wikipedia.org/wiki/Pushpak_Bhattacharyya" target="_blank" rel="noopener noreferrer" class="hover:underline">Pushpak Bhattacharyya</a>
+            </p>
+            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Computer Science and Engineering, IIT Bombay</p>
+            <div class="mt-6 flex flex-wrap justify-center gap-2">
+                <a class="pill" href="https://arxiv.org/pdf/2402.15478" target="_blank" rel="noopener noreferrer"><i class="fas fa-file-pdf"></i> Paper</a>
+                <a class="pill" href="https://arxiv.org/abs/2402.15478" target="_blank" rel="noopener noreferrer"><i class="ai ai-arxiv"></i> arXiv</a>
+                <a class="pill" href="https://github.com/swaroop-nath/transformer-expressivity" target="_blank" rel="noopener noreferrer"><i class="fab fa-github"></i> Code</a>
+            </div>
+        </div>
+
+        <!-- TL;DR: Sec. 4 (Theorem 4.1 + layer growth from Yun et al.) and Sec. 5 (Expt-I vs Expt-II) -->
+        <p class="mt-10 text-center text-lg leading-relaxed text-gray-700 dark:text-gray-300 max-w-2xl mx-auto">Transformers approximate functions with piecewise-constant steps, so they struggle to regress smooth functions.</p>
+
+        <div class="mt-14 space-y-14">
+            <section id="demo" class="scroll-mt-20">
+                <h2 class="section-title">Interactive Demo</h2>
+                <p class="mt-4 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                    Pick a function and change the resolution factor &delta;, the size of each constant piece. Functions that change quickly need smaller &delta; to keep the error under &epsilon;, and smaller &delta; means many more layers.
+                </p>
+                <div class="demo mt-5">
+                    <div class="flex flex-wrap items-center gap-3">
+                        <span class="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Function</span>
+                        <div class="seg" role="group" aria-label="Target function" id="fn-seg">
+                            <!-- Step function is the paper's own example in Sec. 4 ("What if a function is already piecewise constant?") -->
+                            <button type="button" data-fn="linear" aria-pressed="true">f(x) = x</button>
+                            <button type="button" data-fn="sin1" aria-pressed="false">&frac12; + &frac12; sin 2&pi;x</button>
+                            <button type="button" data-fn="sin3" aria-pressed="false">&frac12; + &frac12; sin 6&pi;x</button>
+                            <button type="button" data-fn="step" aria-pressed="false">Step (paper&rsquo;s example)</button>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-gray-600 dark:text-gray-400" aria-hidden="true">
+                        <span class="inline-flex items-center gap-2"><span class="key-line" style="border-color: var(--ref)"></span><span>f, the target</span></span>
+                        <span class="inline-flex items-center gap-2"><span class="key-line" style="border-color: var(--accent)"></span><span><span class="fbar">f</span>, piecewise constant</span></span>
+                        <span class="inline-flex items-center gap-2"><span class="key-area" style="background: var(--accent-soft); outline: 1px solid var(--accent); outline-offset: -1px; opacity: 0.8"></span><span>|<span class="fbar">f</span> &minus; f|, the error</span></span>
+                    </div>
+
+                    <div class="chart-wrap mt-3" id="chart-wrap">
+                        <svg id="chart" tabindex="0" role="img" aria-label="Plot of the target function and its piecewise-constant approximation. Use the left and right arrow keys to read values."></svg>
+                        <div class="tip" id="tip" hidden></div>
+                    </div>
+
+                    <div class="mt-5 grid gap-5 sm:grid-cols-2">
+                        <label class="block">
+                            <span class="flex items-baseline justify-between text-sm">
+                                <span class="text-gray-700 dark:text-gray-300">Resolution factor &delta;</span>
+                                <span id="delta-out" class="text-gray-500 dark:text-gray-400 tabular-nums"></span>
+                            </span>
+                            <input id="delta" type="range" min="0" max="39" step="1" value="35" class="mt-2">
+                        </label>
+                        <label class="block">
+                            <span class="flex items-baseline justify-between text-sm">
+                                <span class="text-gray-700 dark:text-gray-300">Input sequence length m</span>
+                                <span id="m-out" class="text-gray-500 dark:text-gray-400 tabular-nums"></span>
+                            </span>
+                            <input id="m" type="range" min="1" max="20" step="1" value="10" class="mt-2">
+                        </label>
+                    </div>
+
+                    <div class="mt-5 grid gap-3 sm:grid-cols-3" aria-live="polite">
+                        <div class="tile">
+                            <div class="label">Error d&#8321;(<span class="fbar">f</span>, f)</div>
+                            <div class="value tabular-nums" id="err-val"></div>
+                            <div class="sub" id="err-status"></div>
+                        </div>
+                        <div class="tile">
+                            <div class="label">Largest &delta; with error &le; &epsilon;</div>
+                            <div class="value tabular-nums" id="best-val"></div>
+                            <div class="sub" id="best-sub"></div>
+                        </div>
+                        <div class="tile">
+                            <!-- Sec. 3.3: layers grow as O(m (1/δ)^{dm}) (Yun et al., 2020); Sec. 4 example: δ ≤ 0.2 gives O(m·5^m) -->
+                            <div class="label">Layer growth, m &middot; (1/&delta;)<sup>dm</sup></div>
+                            <div class="value" id="layers-val"></div>
+                            <div class="sub" id="layers-sub"></div>
+                        </div>
+                    </div>
+
+                    <details class="mt-4 text-sm">
+                        <summary class="cursor-pointer text-gray-600 dark:text-gray-400">Show values per piece</summary>
+                        <div class="mt-3 max-h-64 overflow-y-auto">
+                            <table class="values-table" id="values-table"></table>
+                        </div>
+                    </details>
+
+                    <p class="demo-note mt-4 leading-relaxed">
+                        Illustration of the paper&rsquo;s argument in one dimension (m&nbsp;=&nbsp;n&nbsp;=&nbsp;d&nbsp;=&nbsp;1 in the plot, p&nbsp;=&nbsp;1, &epsilon;&nbsp;=&nbsp;0.1 as in the paper&rsquo;s example). As in the proof of Theorem&nbsp;4.1, <span class="fbar">f</span> takes the value of f at the centre of each piece. &delta; is limited to 1/N so the pieces tile [0,&nbsp;1). The layer term is an order of growth, not an exact layer count.
+                    </p>
+                </div>
+            </section>
+
+            <section id="abstract" class="scroll-mt-20">
+                <h2 class="section-title">Abstract</h2>
+                <!-- Verbatim from arXiv 2402.15478v3 -->
+                <p class="mt-5 leading-relaxed text-gray-700 dark:text-gray-300">Transformers have become pivotal in Natural Language Processing, demonstrating remarkable success in applications like Machine Translation and Summarization. Given their widespread adoption, several works have attempted to analyze the expressivity of Transformers. Expressivity of a neural network is the class of functions it can approximate. A neural network is fully expressive if it can act as a universal function approximator. We attempt to analyze the same for Transformers. Contrary to existing claims, our findings reveal that Transformers struggle to reliably approximate smooth functions, relying on piecewise constant approximations with sizable intervals. The central question emerges as: &ldquo;<em>Are Transformers truly Universal Function Approximators?</em>&rdquo; To address this, we conduct a thorough investigation, providing theoretical insights and supporting evidence through experiments. Theoretically, we prove that <em>Transformer Encoders</em> cannot approximate smooth functions. Experimentally, we complement our theory and show that the <em>full Transformer architecture</em> cannot approximate smooth functions. By shedding light on these challenges, we advocate a refined understanding of Transformers&rsquo; capabilities. Code Link: <a href="https://github.com/swaroop-nath/transformer-expressivity" target="_blank" rel="noopener noreferrer" class="accent">https://github.com/swaroop-nath/transformer-expressivity</a>.</p>
+            </section>
+
+            <section id="argument" class="scroll-mt-20">
+                <h2 class="section-title">The Argument</h2>
+                <ol class="mt-5 space-y-4 leading-relaxed text-gray-700 dark:text-gray-300 list-decimal pl-5">
+                    <!-- Sec. 3.3 -->
+                    <li>Yun et al. (2020) show that Transformers approximate a function f by first replacing it with a piecewise-constant <span class="fbar">f</span>, whose smallest piece has size &delta; (the <em>resolution factor</em>). Fitting <span class="fbar">f</span> then takes <span class="tex" data-tex="\mathcal{O}\big(m\,(1/\delta)^{dm}\big)"></span> layers, for input length m and embedding dimension d.</li>
+                    <!-- Theorem 4.1, Eq. 4.1.1 -->
+                    <li>We bound &delta; by how fast f changes (Theorem&nbsp;4.1). If <span class="fbar">f</span> is to stay within &epsilon; of f in the d<sub>p</sub> distance:
+                        <div class="katex-block mt-3 text-center tex-display" data-tex="\delta \le \left(\dfrac{2^p\,(p+1)\,\epsilon^p}{\displaystyle\sum_{X^0\in\mathcal{X}^0}\sum_{i=1}^{d}\sum_{j=1}^{n}\Big|\sum_{k=1}^{m}\sum_{l=1}^{d}\frac{\partial f(X)^j_i}{\partial X^k_l}\Big|_{X^0}\Big|^p}\right)^{\frac{1}{p+md}}"></div>
+                    </li>
+                    <!-- Sec. 4, worked example -->
+                    <li>Together: a smooth f needs a small &delta;, and so a number of layers exponential in m. For example, with &epsilon;&nbsp;=&nbsp;0.1, p&nbsp;=&nbsp;1, d&nbsp;=&nbsp;1, a covering of about 10 points and a 1-Lipschitz f, &delta;&nbsp;&le;&nbsp;0.2, so layers grow as <span class="tex" data-tex="\mathcal{O}(m\cdot 5^m)"></span>.</li>
+                </ol>
+                <!-- Sec. 4, "Limitations of our Theory" -->
+                <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">The theory covers the Transformer encoder; the experiments test the full encoder&ndash;decoder Transformer.</p>
+            </section>
+
+            <section id="results" class="scroll-mt-20">
+                <h2 class="section-title">Results</h2>
+                <!-- Sec. 5 (Expt-I / Expt-II, failure-rate, 5 classes, 5 runs) -->
+                <p class="mt-5 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                    On synthetic data (4 inputs, 3 outputs; logarithmic, exponential and polynomial terms), <strong class="font-semibold text-gray-800 dark:text-gray-200">Expt-I</strong> trains the Transformer to generate the outputs directly (regression), and <strong class="font-semibold text-gray-800 dark:text-gray-200">Expt-II</strong> quantizes them into 5 classes (classification). <code class="text-xs">failure-rate</code> is the fraction of test points whose ground truth is not the nearest neighbour of the prediction (1&nbsp;&minus;&nbsp;accuracy for Expt-II). Each setting is run 5 times; bands and bars show the standard deviation.
+                </p>
+                <div class="mt-5 flex flex-wrap items-center gap-3">
+                    <div class="seg" role="group" aria-label="Ablation" id="res-seg"></div>
+                </div>
+                <figure class="figure mt-5">
+                    <div id="res-media"></div>
+                    <figcaption id="res-caption"></figcaption>
+                </figure>
+            </section>
+
+            <section id="citation" class="scroll-mt-20">
+                <h2 class="section-title">Citation</h2>
+                <div class="bibtex mt-5"><button class="copy-btn" data-copy-target="bibtex-text">Copy</button><pre id="bibtex-text">@misc{nath2024transformers,
+  title         = {Transformers are Expressive, But Are They Expressive Enough for Regression?},
+  author        = {Swaroop Nath and Harshad Khadilkar and Pushpak Bhattacharyya},
+  year          = {2024},
+  eprint        = {2402.15478},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  url           = {https://arxiv.org/abs/2402.15478}
+}</pre></div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+        // ---------- Math ----------
+        window.addEventListener('load', function () {
+            if (!window.katex) return;
+            document.querySelectorAll('[data-tex]').forEach(function (el) {
+                katex.render(el.getAttribute('data-tex'), el, {
+                    displayMode: el.classList.contains('tex-display'),
+                    throwOnError: false,
+                });
+            });
+        });
+
+        // ---------- Resolution-factor demo ----------
+        (function () {
+            const EPS = 0.1;          // the paper's worked example (Sec. 4)
+            const MAX_N = 40;         // δ = 1/N, N = 1..40
+            const SAMPLES = 4000;     // midpoint rule for d1
+
+            const FUNCS = {
+                linear: { name: 'f(x) = x', f: function (x) { return x; } },
+                sin1: { name: '½ + ½ sin 2πx', f: function (x) { return 0.5 + 0.5 * Math.sin(2 * Math.PI * x); } },
+                sin3: { name: '½ + ½ sin 6πx', f: function (x) { return 0.5 + 0.5 * Math.sin(6 * Math.PI * x); } },
+                // Sec. 4: f(x) = 0.5 on [0, 0.75), 1 on [0.75, 1)
+                step: { name: 'step', f: function (x) { return x < 0.75 ? 0.5 : 1; } },
+            };
+
+            const state = { fn: 'linear', N: 5, m: 10, hoverX: null };
+
+            const svg = document.getElementById('chart');
+            const wrap = document.getElementById('chart-wrap');
+            const tip = document.getElementById('tip');
+            const deltaInput = document.getElementById('delta');
+            const mInput = document.getElementById('m');
+
+            const fbar = function (x, N, f) {
+                const i = Math.min(N - 1, Math.floor(x * N));
+                return f((i + 0.5) / N);
+            };
+            const d1 = function (N, f) {
+                let s = 0;
+                for (let k = 0; k < SAMPLES; k++) {
+                    const x = (k + 0.5) / SAMPLES;
+                    s += Math.abs(fbar(x, N, f) - f(x));
+                }
+                return s / SAMPLES;
+            };
+            const pieceError = function (i, N, f) {
+                const a = i / N, b = (i + 1) / N, c = f((i + 0.5) / N), n = 200;
+                let s = 0;
+                for (let k = 0; k < n; k++) s += Math.abs(c - f(a + (k + 0.5) * (b - a) / n));
+                return s * (b - a) / n;
+            };
+
+            // Largest δ = 1/N (smallest N) with d1 ≤ ε, cached per function
+            const bestCache = {};
+            const bestN = function (key) {
+                if (bestCache[key] !== undefined) return bestCache[key];
+                let found = null;
+                for (let N = 1; N <= 400; N++) {
+                    if (d1(N, FUNCS[key].f) <= EPS + 1e-9) { found = N; break; }
+                }
+                bestCache[key] = found;
+                return found;
+            };
+
+            const fmt = function (v, digits) { return v.toFixed(digits === undefined ? 3 : digits); };
+            const sup = function (n) {
+                const map = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '-': '⁻' };
+                return String(n).split('').map(function (c) { return map[c] || c; }).join('');
+            };
+            const fmtBig = function (v) {
+                if (v < 1e5) return Math.round(v).toLocaleString('en-US');
+                const e = Math.floor(Math.log10(v));
+                const mant = v / Math.pow(10, e);
+                return mant.toFixed(1) + ' × 10' + sup(e);
+            };
+
+            const NS = 'http://www.w3.org/2000/svg';
+            const el = function (tag, attrs, parent) {
+                const node = document.createElementNS(NS, tag);
+                for (const k in attrs) node.setAttribute(k, attrs[k]);
+                if (parent) parent.appendChild(node);
+                return node;
+            };
+
+            let geom = null;
+
+            const draw = function () {
+                const f = FUNCS[state.fn].f;
+                const N = state.N;
+                const W = Math.max(280, wrap.clientWidth);
+                const H = W < 520 ? 230 : 290;
+                const M = { l: 34, r: 10, t: 12, b: 30 };
+                const iw = W - M.l - M.r, ih = H - M.t - M.b;
+                const X = function (x) { return M.l + x * iw; };
+                const Y = function (y) { return M.t + (1 - (y + 0.05) / 1.1) * ih; };
+                geom = { X: X, Y: Y, M: M, iw: iw, ih: ih, W: W, H: H };
+
+                const accent = cssVar('--accent'), ref = cssVar('--ref'), line = cssVar('--line');
+                const muted = cssVar('--muted'), surface = cssVar('--surface-2');
+
+                svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+                svg.setAttribute('width', W);
+                svg.setAttribute('height', H);
+                while (svg.firstChild) svg.removeChild(svg.firstChild);
+
+                // Grid and axes: solid hairlines
+                [0, 0.5, 1].forEach(function (v) {
+                    el('line', { x1: M.l, x2: W - M.r, y1: Y(v), y2: Y(v), stroke: line, 'stroke-width': 1 }, svg);
+                    const t = el('text', { x: M.l - 8, y: Y(v) + 4, 'text-anchor': 'end', 'font-size': 11, fill: muted }, svg);
+                    t.textContent = v === 0.5 ? '0.5' : String(v);
+                });
+                [0, 0.25, 0.5, 0.75, 1].forEach(function (v) {
+                    const t = el('text', { x: X(v), y: H - 8, 'text-anchor': 'middle', 'font-size': 11, fill: muted }, svg);
+                    t.textContent = String(v);
+                });
+
+                // Error area: between f and the constant value on each piece
+                let area = '';
+                for (let i = 0; i < N; i++) {
+                    const a = i / N, b = (i + 1) / N, c = f((i + 0.5) / N);
+                    const steps = Math.max(8, Math.ceil(400 / N));
+                    area += 'M' + X(a) + ',' + Y(c);
+                    for (let k = 0; k <= steps; k++) {
+                        const x = a + (b - a) * k / steps;
+                        area += 'L' + X(x) + ',' + Y(f(Math.min(x, b - 1e-9)));
+                    }
+                    area += 'L' + X(b) + ',' + Y(c) + 'Z';
+                }
+                el('path', { d: area, fill: accent, 'fill-opacity': 0.16, stroke: 'none' }, svg);
+
+                // Target f
+                let p = '';
+                const S = 600;
+                for (let k = 0; k <= S; k++) {
+                    const x = Math.min(k / S, 1 - 1e-9);
+                    p += (k === 0 ? 'M' : 'L') + X(k / S) + ',' + Y(f(x));
+                }
+                el('path', { d: p, fill: 'none', stroke: ref, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+
+                // Piecewise-constant f̄
+                let s = '';
+                for (let i = 0; i < N; i++) {
+                    const c = f((i + 0.5) / N);
+                    s += (i === 0 ? 'M' + X(0) + ',' + Y(c) : 'V' + Y(c)) + 'H' + X((i + 1) / N);
+                }
+                el('path', { d: s, fill: 'none', stroke: accent, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }, svg);
+
+                // Piece centres x⁰ where f̄ = f(x⁰), when there is room for them
+                if (N <= 20) {
+                    for (let i = 0; i < N; i++) {
+                        const x0 = (i + 0.5) / N;
+                        el('circle', { cx: X(x0), cy: Y(f(x0)), r: 4, fill: accent, stroke: surface, 'stroke-width': 2 }, svg);
+                    }
+                }
+
+                // Hover layer
+                const g = el('g', { id: 'hover', visibility: 'hidden' }, svg);
+                el('line', { id: 'cross', y1: M.t, y2: M.t + ih, stroke: muted, 'stroke-width': 1 }, g);
+                el('circle', { id: 'dot-f', r: 4, fill: ref, stroke: surface, 'stroke-width': 2 }, g);
+                el('circle', { id: 'dot-fb', r: 4, fill: accent, stroke: surface, 'stroke-width': 2 }, g);
+                el('rect', { x: M.l, y: M.t, width: iw, height: ih, fill: 'transparent', id: 'hit' }, svg);
+
+                if (state.hoverX !== null) showHover(state.hoverX);
+            };
+
+            const addRow = function (parent, keyStyle, value, label) {
+                const row = document.createElement('div');
+                row.className = 'row';
+                const key = document.createElement('span');
+                key.className = keyStyle.cls;
+                for (const k in keyStyle.css) key.style[k] = keyStyle.css[k];
+                const strong = document.createElement('strong');
+                strong.textContent = value;
+                const span = document.createElement('span');
+                span.innerHTML = label; // constant labels defined below, never data
+                row.appendChild(key); row.appendChild(strong); row.appendChild(span);
+                parent.appendChild(row);
+            };
+
+            const showHover = function (x) {
+                if (!geom) return;
+                x = Math.max(0, Math.min(1 - 1e-6, x));
+                state.hoverX = x;
+                const f = FUNCS[state.fn].f;
+                const fx = f(x), fb = fbar(x, state.N, f);
+                const g = svg.querySelector('#hover');
+                g.setAttribute('visibility', 'visible');
+                const cross = svg.querySelector('#cross');
+                cross.setAttribute('x1', geom.X(x)); cross.setAttribute('x2', geom.X(x));
+                svg.querySelector('#dot-f').setAttribute('cx', geom.X(x));
+                svg.querySelector('#dot-f').setAttribute('cy', geom.Y(fx));
+                svg.querySelector('#dot-fb').setAttribute('cx', geom.X(x));
+                svg.querySelector('#dot-fb').setAttribute('cy', geom.Y(fb));
+
+                tip.textContent = '';
+                const head = document.createElement('div');
+                head.textContent = 'x = ' + fmt(x, 3);
+                head.style.marginBottom = '0.2rem';
+                tip.appendChild(head);
+                addRow(tip, { cls: 'key-line', css: { borderColor: 'var(--ref)' } }, fmt(fx), 'f(x)');
+                addRow(tip, { cls: 'key-line', css: { borderColor: 'var(--accent)' } }, fmt(fb), '<span class="fbar">f</span>(x)');
+                addRow(tip, { cls: 'key-area', css: { background: 'var(--accent-soft)' } }, fmt(Math.abs(fb - fx)), '|<span class="fbar">f</span> − f|');
+                tip.hidden = false;
+
+                const scale = wrap.clientWidth / geom.W;
+                const px = geom.X(x) * scale;
+                const tw = tip.offsetWidth;
+                let left = px + 12;
+                if (left + tw > wrap.clientWidth) left = px - tw - 12;
+                tip.style.left = Math.max(0, left) + 'px';
+                tip.style.top = (geom.M.t * scale) + 'px';
+            };
+            const hideHover = function () {
+                state.hoverX = null;
+                const g = svg.querySelector('#hover');
+                if (g) g.setAttribute('visibility', 'hidden');
+                tip.hidden = true;
+            };
+
+            const xFromEvent = function (evt) {
+                const r = svg.getBoundingClientRect();
+                const sx = (evt.clientX - r.left) * (geom.W / r.width);
+                return (sx - geom.M.l) / geom.iw;
+            };
+            svg.addEventListener('pointermove', function (e) {
+                const x = xFromEvent(e);
+                if (x < -0.02 || x > 1.02) { hideHover(); return; }
+                showHover(x);
+            });
+            svg.addEventListener('pointerleave', hideHover);
+            svg.addEventListener('focus', function () { showHover(state.hoverX === null ? 0.5 : state.hoverX); });
+            svg.addEventListener('blur', hideHover);
+            svg.addEventListener('keydown', function (e) {
+                const step = e.shiftKey ? 0.1 : 0.01;
+                if (e.key === 'ArrowRight') { showHover((state.hoverX || 0) + step); e.preventDefault(); }
+                else if (e.key === 'ArrowLeft') { showHover((state.hoverX || 0) - step); e.preventDefault(); }
+                else if (e.key === 'Escape') { hideHover(); }
+            });
+
+            const updateReadouts = function () {
+                const f = FUNCS[state.fn].f;
+                const N = state.N, delta = 1 / N;
+                const err = d1(N, f);
+
+                document.getElementById('delta-out').textContent = 'δ = ' + fmt(delta, 3).replace(/0+$/, '').replace(/\.$/, '') + ' · ' + N + (N === 1 ? ' piece' : ' pieces');
+                deltaInput.setAttribute('aria-valuetext', 'delta ' + fmt(delta, 3) + ', ' + N + ' pieces');
+                document.getElementById('m-out').textContent = 'm = ' + state.m;
+
+                document.getElementById('err-val').textContent = fmt(err);
+                const st = document.getElementById('err-status');
+                st.textContent = '';
+                const ok = err <= EPS + 1e-9;
+                const icon = document.createElement('i');
+                icon.className = 'fas ' + (ok ? 'fa-check' : 'fa-xmark') + ' mr-1';
+                st.className = 'sub ' + (ok ? 'status-good' : 'status-bad');
+                st.appendChild(icon);
+                st.appendChild(document.createTextNode(ok ? 'within ε = 0.1' : 'above ε = 0.1'));
+
+                const bn = bestN(state.fn);
+                document.getElementById('best-val').textContent = bn ? ('1/' + bn + ' ≈ ' + fmt(1 / bn, 3)) : '—';
+                document.getElementById('best-sub').textContent = state.fn === 'step'
+                    ? 'zero error once piece edges meet the step at 0.75, e.g. δ = 0.25'
+                    : 'for this f, among δ = 1/N';
+
+                const growth = state.m * Math.pow(N, state.m);
+                document.getElementById('layers-val').textContent = fmtBig(growth);
+                document.getElementById('layers-sub').textContent = 'δ = ' + fmt(delta, 3).replace(/0+$/, '').replace(/\.$/, '') + ', m = ' + state.m + ', d = 1';
+
+                // Per-piece table
+                const table = document.getElementById('values-table');
+                table.textContent = '';
+                const thead = document.createElement('tr');
+                ['Piece', 'x⁰', '<span class="fbar">f</span> = f(x⁰)', 'Error on piece'].forEach(function (h) {
+                    const th = document.createElement('th'); th.innerHTML = h; thead.appendChild(th);
+                });
+                table.appendChild(thead);
+                for (let i = 0; i < N; i++) {
+                    const tr = document.createElement('tr');
+                    const a = i / N, b = (i + 1) / N, x0 = (i + 0.5) / N;
+                    [ '[' + fmt(a, 3) + ', ' + fmt(b, 3) + ')', fmt(x0, 3), fmt(f(x0)), fmt(pieceError(i, N, f), 4) ].forEach(function (v) {
+                        const td = document.createElement('td'); td.textContent = v; tr.appendChild(td);
+                    });
+                    table.appendChild(tr);
+                }
+            };
+
+            const render = function () { draw(); updateReadouts(); };
+
+            document.querySelectorAll('#fn-seg button').forEach(function (b) {
+                b.addEventListener('click', function () {
+                    state.fn = b.getAttribute('data-fn');
+                    document.querySelectorAll('#fn-seg button').forEach(function (o) { o.setAttribute('aria-pressed', String(o === b)); });
+                    render();
+                });
+            });
+            deltaInput.addEventListener('input', function () {
+                state.N = MAX_N - Number(deltaInput.value);
+                render();
+            });
+            mInput.addEventListener('input', function () {
+                state.m = Number(mInput.value);
+                updateReadouts();
+            });
+
+            state.N = MAX_N - Number(deltaInput.value);
+            state.m = Number(mInput.value);
+            document.addEventListener('themechange', draw);
+            let rt = null;
+            window.addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(draw, 80); });
+            render();
+        })();
+
+        // ---------- Results explorer ----------
+        (function () {
+            // Every caption restates the paper's own reading of its figure (Sec. 5.3 and Appendix D)
+            const RESULTS = [
+                { key: 'layers', label: 'Layers', fig: 'Figure 3a', src: 'figures/frate-vs-layers.png',
+                  alt: 'failure-rate against number of layers (3 to 15) for Expt-I and Expt-II',
+                  cap: 'More layers lower Expt-I failure-rate, as the theory predicts, but even at 15 layers it is about 0.8, against about 0.30 for Expt-II.' },
+                { key: 'heads', label: 'Attention heads', fig: 'Figure 3b', src: 'figures/frate-vs-attn-heads.png',
+                  alt: 'failure-rate against number of attention heads for Expt-I and Expt-II',
+                  cap: 'More heads slowly help Expt-I but widen the spread across runs; Expt-II stays about the same.' },
+                { key: 'ffn', label: 'FFN width r', fig: 'Figure 4a', src: 'figures/frate-vs-twffn.png',
+                  alt: 'failure-rate against token-wise feed-forward dimension r from 8 to 1024, d = 64',
+                  cap: 'Varying the feed-forward width r from 8 to 1024 (d = 64): Expt-I oscillates with high variance; Expt-II shows no clear trend.' },
+                { key: 'emb', label: 'Embedding d', fig: 'Figure 4b', src: 'figures/frate-vs-emb.png',
+                  alt: 'failure-rate against embedding dimension d from 4 to 512, r = d',
+                  cap: 'Expt-II improves up to d = 128; Expt-I oscillates. The best settings, d = 32 (Expt-I) and d = 128 (Expt-II), are used elsewhere.' },
+                { key: 'inputs', label: '# Inputs', fig: 'Figure 5b', src: 'figures/frate-vs-inputs.png', narrow: true,
+                  alt: 'failure-rate for 2, 3 and 4 inputs, Expt-I and Expt-II',
+                  cap: 'With 2, 3 or 4 inputs, Expt-I improves but varies more across runs; the gap to Expt-II remains.' },
+                { key: 'outputs', label: '# Outputs', fig: 'Figure 5a', src: 'figures/frate-vs-outputs.png', narrow: true,
+                  alt: 'failure-rate for 1, 2 and 3 outputs, Expt-I and Expt-II',
+                  cap: 'With 1, 2 or 3 outputs, the same pattern: Expt-I improves but varies more, and the gap to Expt-II remains.' },
+                { key: 'k', label: 'failure-rate@k', fig: 'Figure 6', src: 'figures/frate-vs-k.png',
+                  alt: 'failure-rate@k for k from 1 to 4, Expt-I and Expt-II',
+                  cap: 'Counting a hit anywhere in the top k, Expt-I still fails most of the time as k grows.' },
+                { key: 'pe', label: 'Positional embedding', fig: 'Figure 9', src: 'figures/frate-vs-pe-scheme.png', narrow: true,
+                  alt: 'failure-rate with sinusoidal and learned positional embeddings',
+                  cap: 'Sinusoidal or learned positional embeddings: the gap between Expt-I and Expt-II persists with either.' },
+                { key: 'data', label: 'Data size', fig: 'Figure 10', src: 'figures/frate-vs-data-size.png', narrow: true,
+                  alt: 'failure-rate with 200K and 400K training samples',
+                  cap: 'Doubling the training set from 200K to 400K samples changes little for either experiment.' },
+                { key: 'classes', label: '20 classes', fig: 'Figure 7', src: 'figures/frate-vs-clsf-classes.png',
+                  alt: 'Expt-II failure-rate with 20 classes against embedding dimension',
+                  cap: 'With 20 classes (smaller pieces), Expt-II fails more often, and improves as the embedding dimension grows.' },
+                { key: 'tsne', label: 't-SNE', fig: 'Figure 8', tsne: true,
+                  cap: 't-SNE of generated and ground-truth Y₁, Y₂ and Y₃ in Expt-I: the two densities differ markedly. Deeper colours mean higher density.' },
+            ];
+
+            const seg = document.getElementById('res-seg');
+            const media = document.getElementById('res-media');
+            const caption = document.getElementById('res-caption');
+
+            const show = function (r) {
+                seg.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.key === r.key)); });
+                media.textContent = '';
+                if (r.tsne) {
+                    const grid = document.createElement('div');
+                    grid.className = 'grid gap-3 sm:grid-cols-3';
+                    ['1', '2', '3'].forEach(function (n) {
+                        const box = document.createElement('div');
+                        const img = document.createElement('img');
+                        img.src = 'figures/t-sne-y' + n + '.jpg';
+                        img.alt = 't-SNE of generated and ground-truth Y' + n + ' in Expt-I';
+                        img.className = 'w-full';
+                        img.loading = 'lazy';
+                        const lbl = document.createElement('div');
+                        lbl.className = 'text-center text-xs mt-1.5';
+                        lbl.style.color = 'var(--muted)';
+                        lbl.textContent = 'Y' + n;
+                        box.appendChild(img); box.appendChild(lbl);
+                        grid.appendChild(box);
+                    });
+                    media.appendChild(grid);
+                } else {
+                    const box = document.createElement('div');
+                    box.className = 'result-fig' + (r.narrow ? ' narrow' : '');
+                    const img = document.createElement('img');
+                    img.src = r.src;
+                    img.alt = r.alt;
+                    img.className = 'w-full';
+                    box.appendChild(img);
+                    media.appendChild(box);
+                }
+                caption.textContent = '';
+                const tag = document.createElement('span');
+                tag.style.color = 'var(--fg-strong)';
+                tag.style.fontWeight = '600';
+                tag.textContent = r.fig + '. ';
+                caption.appendChild(tag);
+                caption.appendChild(document.createTextNode(r.cap));
+            };
+
+            RESULTS.forEach(function (r, i) {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.dataset.key = r.key;
+                b.textContent = r.label;
+                b.setAttribute('aria-pressed', String(i === 0));
+                b.addEventListener('click', function () { show(r); });
+                seg.appendChild(b);
+            });
+            show(RESULTS[0]);
+        })();
+    </script>
+</body>
+</html>

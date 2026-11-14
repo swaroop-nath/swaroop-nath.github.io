@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Efficient Reward Modelling in RLHF &middot; Swaroop Nath</title>
+    <meta name="description" content="A reward model for opinion summarization built on seven expert-defined features, trained with 940 human preferences.">
+    <meta property="og:title" content="Leveraging Domain Knowledge for Efficient Reward Modelling in RLHF: A Case-Study in E-Commerce Opinion Summarization">
+    <meta property="og:description" content="A reward model for opinion summarization built on seven expert-defined features, trained with 940 human preferences.">
+    <meta property="og:image" content="https://swaroop-nath.github.io/efficient-rlhf/teaser.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['DM Sans', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'] } } },
+        }
+    </script>
+    <link rel="stylesheet" href="../assets/project.css">
+    <script src="../assets/project.js"></script>
+    <style>
+        /* Chart marks. Win/loss are the two poles of a diverging pair with a
+           neutral tie in between; both modes validated with the dataviz checks. */
+        :root {
+            --mark-win: #a37d0b;
+            --mark-loss: #4b5563;
+            --mark-tie: #d1d5db;
+            --mark-muted: #cbd2db;
+            --ink-on-win: #111827;
+            --ink-on-loss: #ffffff;
+            --hl-ok: rgba(21, 128, 61, 0.11);
+            --hl-bad: rgba(185, 28, 28, 0.11);
+        }
+        html.dark {
+            --mark-win: #ad8514;
+            --mark-loss: #cbd5e1;
+            --mark-tie: #4b5563;
+            --mark-muted: #4b5563;
+            --ink-on-win: #111827;
+            --ink-on-loss: #111827;
+            --hl-ok: rgba(74, 222, 128, 0.13);
+            --hl-bad: rgba(248, 113, 113, 0.16);
+        }
+        .sc { font-variant: small-caps; letter-spacing: 0.02em; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.8125rem; white-space: nowrap; }
+
+        /* Reward demo rows */
+        .feat-row { display: grid; grid-template-columns: 1fr; gap: 0.35rem 1rem; padding: 0.7rem 0; border-bottom: 1px solid var(--line); }
+        .feat-row:last-child { border-bottom: 0; }
+        @media (min-width: 640px) {
+            .feat-row { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) 2.5rem minmax(0, 0.8fr); align-items: center; }
+        }
+        .feat-val { font-variant-numeric: tabular-nums; color: var(--fg-strong); font-weight: 600; text-align: right; font-size: 0.875rem; }
+        .infl-track { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+        .infl-fill { height: 100%; border-radius: 0 3px 3px 0; background: var(--mark-win); }
+        .stat-value { font-size: 2.25rem; line-height: 1.1; font-weight: 600; color: var(--fg-strong); }
+        .stat-label { font-size: 0.8125rem; color: var(--muted); margin-top: 0.35rem; line-height: 1.4; }
+
+        /* Annotated outputs */
+        .hl-ok { background: var(--hl-ok); border-bottom: 2px solid var(--good); padding: 0 0.1em; border-radius: 2px; }
+        .hl-bad { background: var(--hl-bad); text-decoration: underline wavy var(--bad); text-underline-offset: 3px; padding: 0 0.1em; border-radius: 2px; }
+        .plain .hl-ok, .plain .hl-bad { background: none; border-bottom: 0; text-decoration: none; padding: 0; }
+        .key-ok, .key-bad { display: inline-block; width: 1.5rem; height: 0.8rem; border-radius: 2px; vertical-align: -1px; margin-right: 0.35rem; }
+        .key-ok { background: var(--hl-ok); border-bottom: 2px solid var(--good); }
+        .key-bad { background: var(--hl-bad); border-bottom: 2px solid var(--bad); }
+        details.reviews summary { cursor: pointer; color: var(--accent); font-size: 0.875rem; }
+        details.reviews summary:hover { text-decoration: underline; }
+
+        /* Charts */
+        .chart { position: relative; width: 100%; }
+        .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+        .chart text { font-family: 'DM Sans', system-ui, sans-serif; }
+        .chart .row:focus { outline: none; }
+        .chart .row:focus-visible .focus-ring { stroke: var(--accent); stroke-width: 1.5; }
+        .chart .seg:hover, .chart .bar:hover { filter: brightness(1.08); }
+        .tip {
+            position: absolute; pointer-events: none; z-index: 10;
+            background: var(--surface); border: 1px solid var(--line); border-radius: 0.375rem;
+            padding: 0.4rem 0.6rem; font-size: 0.75rem; color: var(--muted);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08); white-space: nowrap; opacity: 0; transition: opacity 80ms;
+        }
+        .tip strong { color: var(--fg-strong); font-size: 0.875rem; }
+        .legend { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; font-size: 0.75rem; color: var(--muted); }
+        .legend span::before { content: ""; display: inline-block; width: 0.75rem; height: 0.75rem; border-radius: 2px; margin-right: 0.35rem; vertical-align: -1px; background: var(--sw); }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-200">
+
+    <header class="bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+        <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <div>
+                <a href="../index.html" class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">Swaroop Nath</a>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="hidden sm:flex items-center space-x-5 text-sm text-gray-500 dark:text-gray-400">
+                    <a href="../index.html#about" class="hover:text-gray-900 dark:hover:text-white">About</a>
+                    <a href="../index.html#news" class="hover:text-gray-900 dark:hover:text-white">News</a>
+                    <a href="../index.html#publications" class="hover:text-gray-900 dark:hover:text-white">Publications</a>
+                    <a href="../talks.html" class="hover:text-gray-900 dark:hover:text-white">Talks</a>
+                </div>
+                <button id="theme-toggle-main" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400">
+                    <span id="theme-icon-container"><i data-lucide="moon" class="h-5 w-5"></i></span>
+                    <span class="sr-only">Toggle theme</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <a href="../index.html#publications" class="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+            <i data-lucide="arrow-left" class="h-4 w-4"></i> Publications
+        </a>
+
+        <div class="mt-6 text-center">
+            <span class="venue">arXiv 2024</span>
+            <h1 class="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight leading-tight text-gray-900 dark:text-white">Leveraging Domain Knowledge for Efficient Reward Modelling in RLHF: A Case-Study in E-Commerce Opinion Summarization</h1>
+            <!-- Author order and marks as in the paper (paper.tex \author) -->
+            <p class="mt-5 text-gray-700 dark:text-gray-300 leading-relaxed">
+                <a href="../index.html" class="font-semibold text-gray-900 dark:text-white hover:underline">Swaroop Nath</a><sup>&dagger;1</sup>,
+                Tejpalsingh Siledar<sup>&dagger;1</sup>,
+                Sri Raghava<sup>&dagger;1</sup>,
+                Rupasai Rangaraju<sup>&dagger;1</sup>,
+                Harshad Khadilkar<sup>1</sup>,
+                Pushpak Bhattacharyya<sup>1</sup>,
+                Suman Banerjee<sup>2</sup>,
+                Amey Patil<sup>2</sup>,
+                Sudhanshu Shekhar Singh<sup>2</sup>,
+                Muthusamy Chelliah<sup>2</sup>,
+                Nikesh Garera<sup>2</sup>
+            </p>
+            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400"><sup>1</sup>IIT Bombay &nbsp;&nbsp; <sup>2</sup>Flipkart</p>
+            <p class="mt-1 text-xs text-gray-400 dark:text-gray-500"><sup>&dagger;</sup>Equal contribution</p>
+            <div class="mt-6 flex flex-wrap justify-center gap-2">
+                <a class="pill" href="https://arxiv.org/pdf/2402.15473" target="_blank" rel="noopener noreferrer"><i class="fas fa-file-pdf"></i> Paper</a>
+                <a class="pill" href="https://arxiv.org/abs/2402.15473" target="_blank" rel="noopener noreferrer"><i class="ai ai-arxiv"></i> arXiv</a>
+                <a class="pill" href="https://github.com/swaroop-nath/reward-approx-social-choice-opp-summ" target="_blank" rel="noopener noreferrer"><i class="fab fa-github"></i> Code</a>
+                <a class="pill" href="https://huggingface.co/datasets/swaroop-nath/prompt-opin-summ" target="_blank" rel="noopener noreferrer"><i class="fas fa-database"></i> PromptOpinSumm</a>
+                <a class="pill" href="https://huggingface.co/datasets/swaroop-nath/opin-pref" target="_blank" rel="noopener noreferrer"><i class="fas fa-database"></i> OpinPref</a>
+                <a class="pill" href="https://docs.google.com/presentation/d/1pzHrpbQr0nxIe2jDH6YIt3D6J0Nh9K66GUdBlhEBTQU/edit" target="_blank" rel="noopener noreferrer"><i class="fas fa-person-chalkboard"></i> Slides</a>
+            </div>
+        </div>
+
+        <p class="mt-10 text-center text-lg leading-relaxed text-gray-700 dark:text-gray-300 max-w-2xl mx-auto">
+            A reward model for opinion summarization that scores seven expert-defined features instead of raw text, so it can be trained with 940 human preferences.
+        </p>
+
+        <figure class="figure mt-10">
+            <a href="teaser.png" target="_blank" rel="noopener"><img src="teaser.png" alt="Top: the usual approach trains an LLM reward model directly on preference pairs of summaries. Bottom: our approach maps each summary to a vector of feature values with Φ and trains a small feed-forward reward model on those vectors." class="w-full" width="1586" height="1054"></a>
+            <figcaption>Usual reward modelling (top) trains an LLM on preference pairs. Ours (bottom) first maps each summary to seven feature values, then trains a small feed-forward network on them.</figcaption>
+        </figure>
+
+        <div class="mt-14 space-y-14">
+            <section id="demo" class="scroll-mt-20">
+                <h2 class="section-title">Interactive Demo</h2>
+                <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">See the feature scores the reward model works from, and compare the summaries the models actually wrote for one product.</p>
+
+                <!-- Part 1: reward composition -->
+                <div class="demo mt-5" id="reward-demo">
+                    <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+                        <div>
+                            <h3 class="font-semibold text-gray-900 dark:text-white">Feature scores</h3>
+                            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Mistral-7B rates a summary from 0 to 5 on each feature, given the reviews. Load scores from the paper or drag the sliders.</p>
+                        </div>
+                        <label class="text-sm text-gray-600 dark:text-gray-400 shrink-0">
+                            <span class="sr-only">Load feature scores</span>
+                            <select id="preset" class="field w-full sm:w-auto" aria-label="Load feature scores from the paper">
+                                <!-- Averages over OpinPref: Appendix A, Table tab:feature-correlation -->
+                                <optgroup label="OpinPref averages">
+                                    <option value="pref">Human-preferred summaries</option>
+                                    <option value="dispref">Human-rejected summaries</option>
+                                </optgroup>
+                                <!-- Amazon benchmark, mean feature scores: Appendix, Table tab:intrinsic-eval-amazon -->
+                                <optgroup label="Amazon test set (mean per model)">
+                                    <option value="ib">Inductive-Bias (ours)</option>
+                                    <option value="nm">NaiveMean</option>
+                                    <option value="sf">Synth-Feedback</option>
+                                    <option value="sup">Supervised</option>
+                                    <option value="osg">Op-Sum-Gen (prior SOTA)</option>
+                                    <option value="gt">Ground truth</option>
+                                </optgroup>
+                                <option value="custom" disabled>Custom</option>
+                            </select>
+                        </label>
+                    </div>
+
+                    <div class="mt-4 hidden sm:grid text-xs text-gray-400 dark:text-gray-500" style="grid-template-columns: minmax(0,1.25fr) minmax(0,1fr) 2.5rem minmax(0,0.8fr); gap: 1rem;">
+                        <span>Feature</span><span>Score (0&ndash;5)</span><span></span><span>Influence on &phi;<sub>op</sub></span>
+                    </div>
+                    <div id="feat-rows" class="mt-1"></div>
+
+                    <div class="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="rounded-lg border p-4" style="border-color: var(--line); background: var(--surface);">
+                            <div class="stat-value" id="score-mean">&ndash;</div>
+                            <div class="stat-label"><strong class="text-gray-800 dark:text-gray-200">Mean of the features</strong> &mdash; the reward used by the NaiveMean baseline.</div>
+                        </div>
+                        <!-- Influences: Section 6 (Analysis of φ_op), Figure "feature-influence" -->
+                        <p class="text-sm leading-relaxed text-gray-600 dark:text-gray-400 sm:self-center">
+                            &phi;<sub>op</sub> itself is a small trained network over these scores. The right-hand column is each feature's measured influence on it: hallucination and opinion faithfulness matter most.
+                        </p>
+                    </div>
+                    <!-- Influences: Section 6 (Analysis of φ_op), Figure "feature-influence": 13.73 / 24.45 / 2.53 / 2.98 / 14.52 / 33.53 / 8.27 % -->
+                </div>
+
+                <!-- Part 2: annotated outputs. Appendix, Table tab:gen-example (randomly sampled Amazon product) -->
+                <div class="demo mt-6" id="outputs-demo">
+                    <h3 class="font-semibold text-gray-900 dark:text-white">Compare model outputs</h3>
+                    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Summaries of the same eight Amazon reviews, with the paper's annotations.</p>
+
+                    <div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div class="seg" role="group" aria-label="Model" id="model-seg"></div>
+                        <label class="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                            <input type="checkbox" id="hl-toggle" checked style="accent-color: var(--accent);"> Show annotations
+                        </label>
+                    </div>
+
+                    <div class="mt-4 rounded-lg border p-4 sm:p-5" style="border-color: var(--line); background: var(--surface);">
+                        <p id="output-text" class="leading-relaxed text-gray-800 dark:text-gray-200"></p>
+                        <p id="output-meta" class="mt-3 text-xs text-gray-500 dark:text-gray-400"></p>
+                    </div>
+                    <div class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+                        <span><span class="key-ok"></span>Faithful</span>
+                        <span><span class="key-bad"></span>Hallucinated or repeated</span>
+                    </div>
+                    <p id="output-note" class="mt-3 text-sm text-gray-600 dark:text-gray-400"></p>
+
+                    <details class="reviews mt-4">
+                        <summary>Show the eight input reviews</summary>
+                        <ol id="review-list" class="mt-3 space-y-2.5 text-sm leading-relaxed text-gray-600 dark:text-gray-400 list-decimal pl-5"></ol>
+                    </details>
+                </div>
+            </section>
+
+            <section id="results" class="scroll-mt-20">
+                <h2 class="section-title">Results</h2>
+
+                <!-- Stat tiles: 940 (Section 3.3), 21× (Section 1, contributions), 68.8% (Figure human-eval-bar-plot, Inductive-Bias vs Op-Sum-Gen) -->
+                <div class="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <div class="stat-value">940</div>
+                        <div class="stat-label">human preference pairs used to train &phi;<sub>op</sub> (OpinPref)</div>
+                    </div>
+                    <div>
+                        <div class="stat-value">21&times;</div>
+                        <div class="stat-label">less preference data than the smallest public preference dataset</div>
+                    </div>
+                    <div>
+                        <div class="stat-value">68.8%</div>
+                        <div class="stat-label">human-evaluation wins against the prior state of the art (Op-Sum-Gen) on Amazon</div>
+                    </div>
+                </div>
+
+                <div class="demo mt-8">
+                    <div class="flex flex-col gap-3">
+                        <h3 class="font-semibold text-gray-900 dark:text-white">Pairwise preference: Inductive-Bias vs. each competitor</h3>
+                        <div class="seg" role="group" aria-label="Evaluation" id="eval-seg"></div>
+                        <div class="legend" aria-hidden="true">
+                            <span style="--sw: var(--mark-win)">Inductive-Bias wins</span>
+                            <span style="--sw: var(--mark-tie)">Tie</span>
+                            <span style="--sw: var(--mark-loss)">Competitor wins</span>
+                        </div>
+                    </div>
+                    <div class="chart mt-4" id="wtl-chart"><div class="tip" role="presentation"></div></div>
+                    <p class="demo-note mt-3" id="wtl-note"></p>
+                </div>
+
+                <div class="demo mt-6">
+                    <div class="flex flex-col gap-3">
+                        <h3 class="font-semibold text-gray-900 dark:text-white">ROUGE-L by benchmark</h3>
+                        <div class="flex flex-wrap gap-2">
+                            <div class="seg" role="group" aria-label="Benchmark" id="bench-seg"></div>
+                            <div class="seg" role="group" aria-label="Version" id="ver-seg"></div>
+                        </div>
+                    </div>
+                    <div class="chart mt-4" id="rouge-chart"><div class="tip" role="presentation"></div></div>
+                    <p class="demo-note mt-3" id="rouge-note"></p>
+                </div>
+            </section>
+
+            <section id="method" class="scroll-mt-20">
+                <h2 class="section-title">Method</h2>
+                <figure class="figure mt-5">
+                    <a href="pipeline.png" target="_blank" rel="noopener"><img src="pipeline.png" alt="Three steps. Step 1: Mistral-7B generates good, slightly bad and very bad summaries and scores each on seven features. Step 2: domain experts choose the better of two summaries, and the reward model is trained on the feature values of each pair. Step 3: PPO trains the summarization policy with the reward model's score." class="w-full" width="2400" height="1364" loading="lazy"></a>
+                    <figcaption>(1) Mistral-7B writes summaries of three quality levels for PromptOpinSumm and scores each on the seven features. (2) Domain experts pick the better of two summaries; &phi;<sub>op</sub> is trained on the features of each pair. (3) PPO trains a BART-Large summarizer with &phi;<sub>op</sub> as the reward.</figcaption>
+                </figure>
+            </section>
+
+            <section id="abstract" class="scroll-mt-20">
+                <h2 class="section-title">Abstract</h2>
+                <p class="mt-5 leading-relaxed text-gray-700 dark:text-gray-300">Reinforcement Learning from Human Feedback (RLHF) has become a dominating strategy in aligning Language Models (LMs) with human values/goals. The key to the strategy is learning a reward model (&phi;), which can reflect the latent reward model of humans. While this strategy has proven effective, the training methodology requires a lot of human preference annotation (usually in the order of tens of thousands) to train &phi;. Such a large-scale annotation is justifiable when it's a one-time effort, and the reward model is universally applicable. However, human goals are subjective and depend on the task, requiring task-specific preference annotations, which can be impractical to fulfill. To address this challenge, we propose a novel approach to infuse domain knowledge into &phi;, which reduces the amount of preference annotation required (21&times;), omits Alignment Tax, and provides some interpretability. We validate our approach in E-Commerce Opinion Summarization, with a significant reduction in dataset size (to just 940 samples) while advancing the SOTA (~4 point <span class="sc">Rouge</span>-L improvement, 68% of times preferred by humans over SOTA). Our contributions include a novel Reward Modeling technique and two new datasets: <span class="sc">PromptOpinSumm</span> (supervised data for Opinion Summarization) and <span class="sc">OpinPref</span> (a gold-standard human preference dataset). The proposed methodology opens up avenues for efficient RLHF, making it more adaptable to applications with varying human values. We release the artifacts for usage under MIT License.</p>
+            </section>
+
+            <section id="citation" class="scroll-mt-20">
+                <h2 class="section-title">Citation</h2>
+                <div class="bibtex mt-5"><button class="copy-btn" data-copy-target="bibtex-text">Copy</button><pre id="bibtex-text">@misc{nath2024leveraging,
+  title         = {Leveraging Domain Knowledge for Efficient Reward Modelling in RLHF: A Case-Study in E-Commerce Opinion Summarization},
+  author        = {Swaroop Nath and Tejpalsingh Siledar and Sankara Sri Raghava Ravindra Muddu and Rupasai Rangaraju and Harshad Khadilkar and Pushpak Bhattacharyya and Suman Banerjee and Amey Patil and Sudhanshu Shekhar Singh and Muthusamy Chelliah and Nikesh Garera},
+  year          = {2024},
+  eprint        = {2402.15473},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CL},
+  url           = {https://arxiv.org/abs/2402.15473}
+}</pre></div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+    (function () {
+        // ---------- Data (all from the paper) ----------
+
+        // Feature definitions: Appendix A. Influences: Section 6, feature-influence figure (sum to 100%).
+        const FEATURES = [
+            { key: 'AC',  name: 'aspect-coverage',      desc: 'Mentions every product aspect raised in the reviews.', infl: 13.73 },
+            { key: 'OPF', name: 'opinion-faithfulness', desc: 'States the reviewers’ opinions correctly.',        infl: 24.45 },
+            { key: 'OPC', name: 'opinion-coverage',     desc: 'Picks up all the opinions in the reviews.',           infl: 2.53 },
+            { key: 'CC',  name: 'conciseness',          desc: 'Concise and complete; nothing can be dropped.',       infl: 2.98 },
+            { key: 'RE',  name: 'relevance',            desc: 'Stays relevant to the reviews.',                       infl: 14.52 },
+            { key: 'HL',  name: 'hallucination',        desc: 'Factual with respect to the reviews (5 = none).',      infl: 33.53 },
+            { key: 'LC',  name: 'language-correctness', desc: 'Grammatically correct.',                               infl: 8.27 },
+        ];
+        const INFL_MAX = Math.max.apply(null, FEATURES.map(f => f.infl));
+
+        // Order: AC, OPF, OPC, CC, RE, HL, LC
+        const PRESETS = {
+            pref:    [3.69, 4.02, 3.92, 4.05, 4.10, 3.99, 4.50], // tab:feature-correlation, Pref.
+            dispref: [2.84, 3.05, 3.22, 3.44, 3.10, 2.79, 3.32], // tab:feature-correlation, Dis-pref.
+            ib:      [3.60, 3.95, 3.85, 3.99, 4.06, 4.07, 4.65], // tab:intrinsic-eval-amazon
+            nm:      [3.56, 3.91, 3.76, 3.89, 4.04, 3.99, 4.60],
+            sf:      [3.55, 3.87, 3.71, 3.94, 4.04, 3.94, 4.38],
+            sup:     [3.43, 3.71, 3.67, 3.79, 4.04, 3.89, 4.55],
+            osg:     [3.34, 3.92, 3.70, 4.00, 4.08, 3.87, 4.05],
+            gt:      [3.55, 3.93, 3.56, 4.08, 4.04, 3.81, 4.40],
+        };
+
+        // Appendix, tab:gen-example. [[...]] = faithful (olive in the paper), {{...}} = hallucinated or repeated (red).
+        const REVIEWS = [
+            'i really like these boots. they can be a beast to get on, like any boot fit to last; once on, they are incredibly comfortable. I have had them for 4 years and they still look great - worn in but not worn out...',
+            'What great boots! They do take some breaking in - like all real leather does. Run maybe a tad small in the general spectrum, but hey, remember the break in period. Look fabulous, will last me for the next twenty years.... They bridge the fashion vs. function quandary beautifully.',
+            'Every woman needs a pair of these Frye boots! Fit is true to normal size. I wear a standard 9. These fit in the shaft for any ladies who have bigger calves as I do. You have to fight to get them on first few times and they wear stiff until fully broken in. Worth the money and break in time.',
+            'Boots excellent quality, beautiful skin, a modern model. But! they are very narrow! This is the second pair of shoes is a brand and my 8.5 size fits me perfectly, even he little more than usual. But these are very narrow! go to a cobbler, let him try to stretch. Be careful!',
+            'bought these for the wife to have something to kick around in and keep up with the kids, but she doesn’t like them. Her heel lifts with every step, and they’re stiff and heavy. Not an everyday casual shoe.',
+            'Don’t get me wrong, they’re really good boots, but they used to make them better. My last pair from a few years ago were much higher quality. Thicker sole, better full grain leather, now they only make the black in ‘grease’, which stains all my socks black. Keeping them, but still disappointed in Frye.',
+            'i bought it just for the heavy snow cuz my UGG got wet through.even though it is a little expensive, but the boots are nice and it was shipped to me for only two days.!!!!!! i love it',
+            'They were comfortable the moment I put them on. The sizes are exact. The color the way they are made are what I expect from Frye which I’ve been wearing since the 70’s. With a 20year break from not wearing Frye it was a pleasant surprise the quality has stood the test of time.',
+        ];
+        const OUTPUTS = [
+            { id: 'sup', label: 'Supervised',
+              text: 'These Frye boots are a popular choice for women due to their [[comfort]] and [[durability]]. However, they can be a bit challenging to put on and [[require a break-in period]]. Some users have reported that they run small in size and are narrow, requiring a [[cobbler’s assistance for a proper fit]]. The [[leather quality is generally good]], but some users have noted that the {{leather may not last as long as they had hoped}}.' },
+            { id: 'nm', label: 'NaiveMean',
+              text: 'Users generally appreciate the [[comfort]] and [[durability]] of the Frye boots, with some mentioning the need for a [[break-in period]]. [[Sizes run true]] to normal, but some users find them to be a [[bit narrow]]. The boots are praised for their [[stylish appearance]] and ability to [[bridge the fashion and function quandary]]. However, some users have noted that they take {{some time to break in}} and are [[not suitable for everyday casual wear]].',
+              note: 'Closest to Inductive-Bias, but it misses two aspects the reviews raise: leather quality and the drop in quality over the years.' },
+            { id: 'sf', label: 'Synth-Feedback',
+              text: 'These Frye boots are praised for their [[comfort]] and [[durability]], with some users noting the need for a [[break-in period]]. However, some users have noted that they run small in size and require stretching, while others find them {{narrow and stiff}}. The [[leather is described as beautiful and of good quality]], with a [[modern model]]. Some users have {{had them for several years}} and have not worn them out.' },
+            { id: 'ib', label: 'Inductive-Bias (ours)',
+              text: 'These Frye boots are praised for their [[comfort]] and [[durability]], with users expressing satisfaction with their [[fit]] and [[appearance]]. However, some users have noted that they require a [[break-in period]] and can be a [[bit narrow]]. The [[leather quality is praised]] for its durability and [[modern model]], with some users expressing [[disappointment with the lack of improved quality in recent years]].',
+              note: 'The only output with no flagged text. It covers leather quality and the quality decline while staying concise.' },
+        ];
+
+        // Pairwise win/tie/loss for Inductive-Bias, in %. Win and loss values are the labels on the
+        // paper's bar charts (human-eval-bar-plot, gpt4-eval-*-bar-plot); unlabeled segments are
+        // the matching cells of the appendix win/tie/loss tables, normalized to sum to 100.
+        const WTL = {
+            human_amazon: { label: 'Human · Amazon', note: 'Three domain experts ranked anonymized, shuffled summaries (Fleiss’ κ = 56.25%).', rows: [
+                ['Supervised', 60.0, 10.0, 30.0], ['NaiveMean', 48.4, 19.3, 32.3], ['Synth-Feedback', 58.1, 12.9, 29.0],
+                ['Op-Sum-Gen (prior SOTA)', 68.8, 6.2, 25.0], ['Ground truth', 61.4, 9.7, 28.9] ] },
+            gpt4_amazon: { label: 'GPT-4 · Amazon', note: 'GPT-4 ranked anonymized, shuffled summaries.', rows: [
+                ['Supervised', 62.5, 12.5, 25.0], ['NaiveMean', 46.9, 9.3, 43.8], ['Synth-Feedback', 50.0, 6.2, 43.8],
+                ['Op-Sum-Gen (prior SOTA)', 93.8, 0.0, 6.2], ['Ground truth', 90.6, 0.0, 9.4] ] },
+            gpt4_flipkart: { label: 'GPT-4 · Flipkart', note: 'GPT-4 ranked anonymized, shuffled summaries. Op-Sum-Gen only provides aspect-specific summaries for Flipkart, so it is not compared.', rows: [
+                ['Supervised', 63.3, 11.5, 25.2], ['NaiveMean', 53.7, 16.3, 30.0], ['Synth-Feedback', 57.1, 8.9, 34.0],
+                ['Ground truth', 91.2, 2.0, 6.8] ] },
+            gpt4_oposum: { label: 'GPT-4 · Oposum+', note: 'GPT-4 ranked anonymized, shuffled summaries.', rows: [
+                ['Supervised', 66.7, 0.0, 33.3], ['NaiveMean', 46.7, 10.0, 43.3], ['Synth-Feedback', 56.7, 6.6, 36.7],
+                ['Op-Sum-Gen (prior SOTA)', 93.3, 3.3, 3.4], ['Ground truth', 86.7, 6.7, 6.6] ] },
+        };
+
+        // ROUGE-L: tab:automatic-eval-amazon, tab:automatic-eval-oposum, tab:automatic-eval-flipkart.
+        // Order: MeanSum, CopyCat, PlanSum, MultimodalSum, Op-Sum-Gen, Medos | DPO, Supervised, NaiveMean, Synth-Feedback, Inductive-Bias
+        const PRIOR = ['MeanSum', 'CopyCat', 'PlanSum', 'MultimodalSum', 'Op-Sum-Gen', 'Medos'];
+        const OURS = ['DPO', 'Supervised', 'NaiveMean', 'Synth-Feedback', 'Inductive-Bias'];
+        const ROUGE = {
+            'Amazon':      [18.15, 20.16, 19.05, 20.81, 21.50, 20.97, 14.27, 16.91, 16.77, 17.35, 16.90],
+            'Amazon-R':    [null, 12.94, 12.44, 13.20, null, 14.69, 15.03, 18.07, 18.81, 18.61, 19.23],
+            'Amazon-Rdq':  [null, 13.85, 12.02, 12.83, null, 16.45, 14.86, 17.63, 18.36, 18.11, 18.84],
+            'Oposum+':     [16.49, 17.07, 17.48, 19.75, 22.03, 21.35, 16.50, 16.90, 16.99, 17.91, 17.46],
+            'Oposum-R':    [null, 13.94, 13.32, 14.53, 15.83, 15.92, 18.55, 20.35, 21.74, 22.23, 22.02],
+            'Oposum-Rdq':  [null, 14.06, 13.71, 14.70, 15.54, 16.10, 17.60, 19.28, 20.13, 20.71, 20.88],
+            'Flipkart':    [null, null, null, null, null, 16.05, 15.55, 15.37, 16.20, 15.48, 15.71],
+            'Flipkart-R':  [null, null, null, null, null, 16.59, 18.62, 22.56, 22.74, 22.97, 23.30],
+            'Flipkart-Rdq':[null, null, null, null, null, 16.35, 17.28, 19.04, 19.39, 18.59, 19.46],
+        };
+
+        // ---------- Helpers ----------
+        const SVGNS = 'http://www.w3.org/2000/svg';
+        const el = (tag, attrs, parent) => {
+            const n = document.createElementNS(SVGNS, tag);
+            for (const k in attrs) n.setAttribute(k, attrs[k]);
+            if (parent) parent.appendChild(n);
+            return n;
+        };
+        const fmt = (v, d) => v.toFixed(d === undefined ? 2 : d);
+        // Bar path: square at the baseline (left), 4px rounded data end (right) when asked
+        const barPath = (x, y, w, h, roundEnd) => {
+            const r = roundEnd ? Math.min(4, w / 2, h / 2) : 0;
+            return 'M' + x + ',' + y + 'h' + (w - r) + (r ? 'a' + r + ',' + r + ' 0 0 1 ' + r + ',' + r : '') +
+                   'v' + (h - 2 * r) + (r ? 'a' + r + ',' + r + ' 0 0 1 ' + (-r) + ',' + r : '') + 'h' + (-(w - r)) + 'z';
+        };
+        const measure = (() => {
+            const c = document.createElement('canvas').getContext('2d');
+            return (text, size, weight) => { c.font = (weight || 400) + ' ' + size + 'px "DM Sans", system-ui, sans-serif'; return c.measureText(text).width; };
+        })();
+        function makeSeg(container, items, current, onPick) {
+            container.textContent = '';
+            items.forEach(it => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = it.label;
+                b.setAttribute('aria-pressed', it.id === current ? 'true' : 'false');
+                b.addEventListener('click', () => {
+                    container.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', 'false'));
+                    b.setAttribute('aria-pressed', 'true');
+                    onPick(it.id);
+                });
+                container.appendChild(b);
+            });
+        }
+        function showTip(chart, tip, x, y, strong, rest) {
+            tip.textContent = '';
+            const s = document.createElement('strong'); s.textContent = strong; tip.appendChild(s);
+            const r = document.createElement('div'); r.textContent = rest; tip.appendChild(r);
+            tip.style.opacity = '1';
+            const cw = chart.clientWidth, tw = tip.offsetWidth;
+            tip.style.left = Math.max(0, Math.min(cw - tw, x - tw / 2)) + 'px';
+            tip.style.top = (y - tip.offsetHeight - 8) + 'px';
+        }
+        const hideTip = tip => { tip.style.opacity = '0'; };
+
+        // ---------- Demo 1: reward composition ----------
+        const rowsEl = document.getElementById('feat-rows');
+        const presetEl = document.getElementById('preset');
+        const sliders = [];
+        FEATURES.forEach((f, i) => {
+            const row = document.createElement('div');
+            row.className = 'feat-row';
+
+            const label = document.createElement('div');
+            const nm = document.createElement('div'); nm.className = 'mono text-gray-900 dark:text-gray-100'; nm.textContent = f.name;
+            const ds = document.createElement('div'); ds.className = 'text-xs text-gray-500 dark:text-gray-400 mt-0.5'; ds.textContent = f.desc;
+            label.appendChild(nm); label.appendChild(ds);
+
+            const input = document.createElement('input');
+            input.type = 'range'; input.min = '0'; input.max = '5'; input.step = '0.01';
+            input.className = 'flex-1 min-w-0';
+            input.setAttribute('aria-label', f.name + ' score, 0 to 5');
+
+            const out = document.createElement('output'); out.className = 'feat-val';
+
+            const infl = document.createElement('div');
+            infl.className = 'flex items-center gap-2';
+            const inflLbl = document.createElement('span');
+            inflLbl.className = 'sm:hidden text-xs text-gray-400 dark:text-gray-500 shrink-0';
+            inflLbl.textContent = 'Influence';
+            infl.appendChild(inflLbl);
+            const track = document.createElement('div'); track.className = 'infl-track flex-1';
+            const fill = document.createElement('div'); fill.className = 'infl-fill'; fill.style.width = (f.infl / INFL_MAX * 100) + '%';
+            track.appendChild(fill);
+            const pct = document.createElement('span'); pct.className = 'text-xs text-gray-500 dark:text-gray-400 w-12 text-right'; pct.style.fontVariantNumeric = 'tabular-nums';
+            pct.textContent = f.infl.toFixed(1) + '%';
+            infl.appendChild(track); infl.appendChild(pct);
+            infl.setAttribute('title', 'Relative influence on φ_op: ' + f.infl + '%');
+
+            // On phones: name, then slider+value on one line, then influence
+            const sliderWrap = document.createElement('div');
+            sliderWrap.className = 'flex items-center gap-3 sm:contents';
+            sliderWrap.appendChild(input); sliderWrap.appendChild(out);
+
+            row.appendChild(label); row.appendChild(sliderWrap); row.appendChild(infl);
+            rowsEl.appendChild(row);
+
+            input.addEventListener('input', () => {
+                out.textContent = fmt(+input.value);
+                presetEl.value = 'custom';
+                updateScores();
+            });
+            sliders.push({ input, out });
+        });
+
+        function updateScores() {
+            const v = sliders.map(s => +s.input.value);
+            const mean = v.reduce((a, b) => a + b, 0) / v.length;
+            document.getElementById('score-mean').textContent = fmt(mean);
+        }
+        function loadPreset(key) {
+            PRESETS[key].forEach((x, i) => { sliders[i].input.value = x; sliders[i].out.textContent = fmt(x); });
+            updateScores();
+        }
+        presetEl.addEventListener('change', () => { if (PRESETS[presetEl.value]) loadPreset(presetEl.value); });
+        presetEl.value = 'pref';
+        loadPreset('pref');
+
+        // ---------- Demo 2: annotated outputs ----------
+        const textEl = document.getElementById('output-text');
+        const metaEl = document.getElementById('output-meta');
+        const noteEl = document.getElementById('output-note');
+        const hlToggle = document.getElementById('hl-toggle');
+        const reviewList = document.getElementById('review-list');
+        REVIEWS.forEach(r => { const li = document.createElement('li'); li.textContent = r; reviewList.appendChild(li); });
+
+        function renderOutput(id) {
+            const o = OUTPUTS.find(x => x.id === id);
+            textEl.textContent = '';
+            let ok = 0, bad = 0;
+            o.text.split(/(\[\[.*?\]\]|\{\{.*?\}\})/).forEach(part => {
+                if (!part) return;
+                if (part.startsWith('[[')) {
+                    const s = document.createElement('span'); s.className = 'hl-ok'; s.textContent = part.slice(2, -2); textEl.appendChild(s); ok++;
+                } else if (part.startsWith('{{')) {
+                    const s = document.createElement('span'); s.className = 'hl-bad'; s.textContent = part.slice(2, -2); textEl.appendChild(s); bad++;
+                } else {
+                    textEl.appendChild(document.createTextNode(part));
+                }
+            });
+            const words = o.text.replace(/\[\[|\]\]|\{\{|\}\}/g, '').trim().split(/\s+/).length;
+            metaEl.textContent = words + ' words · ' + ok + ' faithful spans · ' + bad + ' flagged';
+            noteEl.textContent = o.note || '';
+            noteEl.style.display = o.note ? '' : 'none';
+        }
+        hlToggle.addEventListener('change', () => textEl.classList.toggle('plain', !hlToggle.checked));
+        makeSeg(document.getElementById('model-seg'), OUTPUTS, 'ib', renderOutput);
+        renderOutput('ib');
+
+        // ---------- Chart: pairwise win/tie/loss ----------
+        const wtlChart = document.getElementById('wtl-chart');
+        const wtlTip = wtlChart.querySelector('.tip');
+        let wtlKey = 'human_amazon';
+
+        function drawWTL() {
+            wtlChart.querySelectorAll('svg').forEach(s => s.remove());
+            const data = WTL[wtlKey];
+            const W = wtlChart.clientWidth;
+            const narrow = W < 520;
+            const labelW = narrow ? 112 : 170;
+            const rowH = 34, barH = 22, gap = 2;
+            const plotW = W - labelW - 4;
+            const H = data.rows.length * rowH + 22;
+            const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H, role: 'img', 'aria-label': 'Pairwise win, tie and loss percentages for Inductive-Bias, ' + data.label });
+
+            // Hairline gridlines at 0/25/50/75/100
+            [0, 25, 50, 75, 100].forEach(t => {
+                const x = labelW + plotW * t / 100;
+                el('line', { x1: x, x2: x, y1: 0, y2: H - 18, stroke: 'var(--line)', 'stroke-width': 1 }, svg);
+                const tx = el('text', { x: x, y: H - 4, 'text-anchor': t === 0 ? 'start' : t === 100 ? 'end' : 'middle', 'font-size': 11, fill: 'var(--faint)' }, svg);
+                tx.textContent = t + '%';
+            });
+
+            data.rows.forEach((r, i) => {
+                const [name, win, tie, loss] = r;
+                const y = i * rowH + (rowH - barH) / 2;
+                const g = el('g', { class: 'row', tabindex: 0, role: 'listitem',
+                    'aria-label': 'Versus ' + name + ': Inductive-Bias wins ' + win + '%, ties ' + tie + '%, loses ' + loss + '%' }, svg);
+                const lbl = el('text', { x: labelW - 10, y: y + barH / 2 + 4, 'text-anchor': 'end', 'font-size': narrow ? 11.5 : 13, fill: 'var(--fg)' }, g);
+                lbl.textContent = (narrow ? '' : 'vs ') + name.replace(' (prior SOTA)', narrow ? '' : ' (prior SOTA)');
+                el('rect', { class: 'focus-ring', x: labelW - 2, y: y - 3, width: plotW + 4, height: barH + 6, rx: 6, fill: 'none', stroke: 'none' }, g);
+
+                const segs = [
+                    { k: 'Inductive-Bias wins', v: win,  fill: 'var(--mark-win)',  ink: 'var(--ink-on-win)' },
+                    { k: 'Tie',                 v: tie,  fill: 'var(--mark-tie)',  ink: 'var(--fg-strong)' },
+                    { k: name.replace(' (prior SOTA)', '') + ' wins', v: loss, fill: 'var(--mark-loss)', ink: 'var(--ink-on-loss)' },
+                ];
+                const total = win + tie + loss;
+                let x = labelW;
+                const visible = segs.filter(s => s.v > 0);
+                visible.forEach((s, j) => {
+                    const fullW = plotW * s.v / total;
+                    const w = Math.max(0, fullW - (j < visible.length - 1 ? gap : 0));
+                    const p = el('path', { class: 'seg', d: barPath(x, y, w, barH, j === visible.length - 1), fill: s.fill }, g);
+                    const label = fmt(s.v, 1) + '%';
+                    if (s.k !== 'Tie' && measure(label, 12, 600) + 12 <= w) {
+                        const t = el('text', { x: j === 0 ? x + 8 : x + w - 8, y: y + barH / 2 + 4, 'text-anchor': j === 0 ? 'start' : 'end', 'font-size': 12, 'font-weight': 600, fill: s.ink, 'pointer-events': 'none' }, g);
+                        t.textContent = label;
+                    }
+                    const cx = x + w / 2;
+                    p.addEventListener('pointermove', () => showTip(wtlChart, wtlTip, cx, y, label, s.k + ' · vs ' + name));
+                    p.addEventListener('pointerleave', () => hideTip(wtlTip));
+                    x += fullW;
+                });
+                g.addEventListener('focus', () => showTip(wtlChart, wtlTip, labelW + plotW / 2, y, 'Win ' + fmt(win, 1) + '% · Tie ' + fmt(tie, 1) + '% · Loss ' + fmt(loss, 1) + '%', 'Inductive-Bias vs ' + name));
+                g.addEventListener('blur', () => hideTip(wtlTip));
+            });
+            svg.setAttribute('role', 'list');
+            wtlChart.insertBefore(svg, wtlTip);
+            document.getElementById('wtl-note').textContent = data.note + ' Values are % of comparisons.';
+        }
+        makeSeg(document.getElementById('eval-seg'),
+            Object.keys(WTL).map(k => ({ id: k, label: WTL[k].label })), wtlKey, k => { wtlKey = k; drawWTL(); });
+
+        // ---------- Chart: ROUGE-L ----------
+        const rougeChart = document.getElementById('rouge-chart');
+        const rougeTip = rougeChart.querySelector('.tip');
+        let bench = 'Amazon', ver = '-R';
+
+        function drawRouge() {
+            rougeChart.querySelectorAll('svg').forEach(s => s.remove());
+            const name = ver === 'Original' ? bench : bench.replace('+', '') + ver;
+            const vals = ROUGE[name];
+            const models = PRIOR.concat(OURS);
+            const rows = [];
+            const priorRows = models.slice(0, 6).map((m, i) => ({ m, v: vals[i] })).filter(r => r.v !== null);
+            const ourRows = models.slice(6).map((m, i) => ({ m, v: vals[i + 6] })).filter(r => r.v !== null);
+            if (priorRows.length) { rows.push({ header: 'Prior work' }); rows.push.apply(rows, priorRows); }
+            rows.push({ header: 'Trained on PromptOpinSumm (this paper)' }); rows.push.apply(rows, ourRows);
+
+            const W = rougeChart.clientWidth;
+            const narrow = W < 520;
+            const labelW = narrow ? 104 : 130;
+            const valW = 44;
+            const rowH = 28, barH = 18, headH = 26;
+            const plotW = W - labelW - valW;
+            const max = 25;
+            let H = 0; rows.forEach(r => { H += r.header ? headH : rowH; }); H += 22;
+            const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, width: W, height: H, role: 'list', 'aria-label': 'ROUGE-L on ' + name });
+
+            const plotBottom = H - 18;
+            [0, 5, 10, 15, 20, 25].forEach(t => {
+                const x = labelW + plotW * t / max;
+                el('line', { x1: x, x2: x, y1: 0, y2: plotBottom, stroke: 'var(--line)', 'stroke-width': 1 }, svg);
+                const tx = el('text', { x: x, y: H - 4, 'text-anchor': 'middle', 'font-size': 11, fill: 'var(--faint)' }, svg);
+                tx.textContent = t;
+            });
+
+            let y = 0;
+            rows.forEach(r => {
+                if (r.header) {
+                    const t = el('text', { x: 0, y: y + headH - 8, 'font-size': 11, 'font-weight': 600, fill: 'var(--muted)', 'letter-spacing': '0.04em' }, svg);
+                    t.textContent = r.header.toUpperCase();
+                    y += headH; return;
+                }
+                const ours = r.m === 'Inductive-Bias';
+                const by = y + (rowH - barH) / 2;
+                const g = el('g', { class: 'row', tabindex: 0, role: 'listitem', 'aria-label': r.m + ': ROUGE-L ' + fmt(r.v) }, svg);
+                const lbl = el('text', { x: labelW - 10, y: by + barH / 2 + 4, 'text-anchor': 'end', 'font-size': narrow ? 11.5 : 13, 'font-weight': ours ? 600 : 400, fill: ours ? 'var(--fg-strong)' : 'var(--fg)' }, g);
+                lbl.textContent = r.m;
+                const w = plotW * r.v / max;
+                el('rect', { class: 'focus-ring', x: labelW - 2, y: by - 3, width: w + valW, height: barH + 6, rx: 6, fill: 'none', stroke: 'none' }, g);
+                const bar = el('path', { class: 'bar', d: barPath(labelW, by, w, barH, true), fill: ours ? 'var(--mark-win)' : 'var(--mark-muted)' }, g);
+                const vt = el('text', { x: labelW + w + 6, y: by + barH / 2 + 4, 'font-size': 12, 'font-weight': ours ? 600 : 400, fill: ours ? 'var(--fg-strong)' : 'var(--muted)' }, g);
+                vt.textContent = fmt(r.v);
+                vt.style.fontVariantNumeric = 'tabular-nums';
+                const tipFn = () => showTip(rougeChart, rougeTip, labelW + w / 2, by, fmt(r.v), r.m + ' · ROUGE-L on ' + name);
+                bar.addEventListener('pointermove', tipFn);
+                bar.addEventListener('pointerleave', () => hideTip(rougeTip));
+                g.addEventListener('focus', tipFn);
+                g.addEventListener('blur', () => hideTip(rougeTip));
+                y += rowH;
+            });
+            rougeChart.insertBefore(svg, rougeTip);
+            document.getElementById('rouge-note').textContent = ver === 'Original'
+                ? 'The original ' + bench + ' test set has review-like or extractive reference summaries, so the paper draws its conclusions mainly from the revamped -R and -Rdq versions (Section 3.2).'
+                : name + ' is a revamped version of the ' + bench + ' test set (Siledar et al., 2024), which the paper relies on for its conclusions.';
+        }
+        makeSeg(document.getElementById('bench-seg'),
+            [{ id: 'Amazon', label: 'Amazon' }, { id: 'Oposum+', label: 'Oposum+' }, { id: 'Flipkart', label: 'Flipkart' }], bench, b => { bench = b; drawRouge(); });
+        makeSeg(document.getElementById('ver-seg'),
+            [{ id: 'Original', label: 'Original' }, { id: '-R', label: '-R' }, { id: '-Rdq', label: '-Rdq' }], ver, v => { ver = v; drawRouge(); });
+
+        // ---------- Draw, and redraw on resize / theme change ----------
+        const drawAll = () => { drawWTL(); drawRouge(); };
+        let lastW = 0;
+        const ro = new ResizeObserver(() => {
+            const w = wtlChart.clientWidth;
+            if (w !== lastW) { lastW = w; requestAnimationFrame(drawAll); }
+        });
+        ro.observe(wtlChart);
+        document.addEventListener('themechange', drawAll);
+        if (document.fonts && document.fonts.ready) document.fonts.ready.then(drawAll);
+    })();
+    </script>
+</body>
+</html>

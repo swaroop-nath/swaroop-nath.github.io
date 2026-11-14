@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RL for Query-focused Summarization &middot; Swaroop Nath</title>
+    <meta name="description" content="Training BART for query-focused summarization with policy-gradient rewards instead of token-level supervision improves ROUGE-L on ELI5 by about 10 points.">
+    <meta property="og:title" content="Reinforcement Replaces Supervision: Query focused Summarization using Deep Reinforcement Learning">
+    <meta property="og:description" content="Training BART for query-focused summarization with policy-gradient rewards instead of token-level supervision improves ROUGE-L on ELI5 by about 10 points.">
+    <meta property="og:image" content="https://swaroop-nath.github.io/rl-qfs/teaser.png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/academicons/1.9.4/css/academicons.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['DM Sans', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'] } } },
+        }
+    </script>
+    <link rel="stylesheet" href="../assets/project.css">
+    <script src="../assets/project.js"></script>
+    <style>
+        /* Highlight colours for the model-output examples; teal and violet
+           follow the colour-coding of the paper's Table 18. */
+        :root {
+            --hl-a: #0f766e; --hl-a-bg: rgba(15, 118, 110, 0.12);
+            --hl-b: #7c3aed; --hl-b-bg: rgba(124, 58, 237, 0.12);
+        }
+        html.dark {
+            --hl-a: #2dd4bf; --hl-a-bg: rgba(45, 212, 191, 0.14);
+            --hl-b: #a78bfa; --hl-b-bg: rgba(167, 139, 250, 0.16);
+        }
+        .seg-a { background: var(--hl-a-bg); box-shadow: inset 0 -2px 0 var(--hl-a); }
+        .seg-b { background: var(--hl-b-bg); box-shadow: inset 0 -2px 0 var(--hl-b); }
+        .seg-h { text-decoration: underline wavy var(--bad); text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
+        .seg-r { text-decoration: underline dotted var(--accent); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+        .key { display: inline-flex; align-items: center; gap: 0.4rem; }
+
+        .lcs { background: var(--accent-soft); color: inherit; box-shadow: inset 0 -2px 0 var(--accent); border-radius: 2px; }
+
+        .meter { height: 8px; border-radius: 9999px; background: var(--accent-soft); overflow: hidden; }
+        .meter > span { display: block; height: 100%; border-radius: 9999px; background: var(--accent); transition: width 200ms ease; }
+
+        .chart-tip {
+            position: absolute; pointer-events: none; z-index: 10;
+            background: var(--surface); border: 1px solid var(--line); border-radius: 0.375rem;
+            padding: 0.35rem 0.55rem; font-size: 0.75rem; line-height: 1.35; color: var(--muted);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08); white-space: nowrap;
+        }
+        .chart-tip strong { color: var(--fg-strong); font-size: 0.8125rem; }
+        .chart svg { display: block; overflow: visible; }
+        .chart .row { outline: none; }
+        .chart .row:hover .row-mark, .chart .row:focus .row-mark { filter: brightness(1.15); }
+        .chart .row:focus-visible .row-bg { stroke: var(--accent); stroke-width: 1.5; }
+
+        .step-num { width: 1.5rem; height: 1.5rem; border-radius: 9999px; border: 1px solid var(--accent); color: var(--accent); font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .katex { font-size: 1.02em; }
+        .eq { overflow-x: auto; overflow-y: hidden; padding: 0.25rem 0; }
+        .text-btn { color: var(--accent); font-size: 0.8125rem; }
+        .text-btn:hover { text-decoration: underline; }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-200">
+
+    <header class="bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+        <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <div>
+                <a href="../index.html" class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">Swaroop Nath</a>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="hidden sm:flex items-center space-x-5 text-sm text-gray-500 dark:text-gray-400">
+                    <a href="../index.html#about" class="hover:text-gray-900 dark:hover:text-white">About</a>
+                    <a href="../index.html#news" class="hover:text-gray-900 dark:hover:text-white">News</a>
+                    <a href="../index.html#publications" class="hover:text-gray-900 dark:hover:text-white">Publications</a>
+                    <a href="../talks.html" class="hover:text-gray-900 dark:hover:text-white">Talks</a>
+                </div>
+                <button id="theme-toggle-main" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400">
+                    <span id="theme-icon-container"><i data-lucide="moon" class="h-5 w-5"></i></span>
+                    <span class="sr-only">Toggle theme</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <a href="../index.html#publications" class="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+            <i data-lucide="arrow-left" class="h-4 w-4"></i> Publications
+        </a>
+
+        <div class="mt-6 text-center">
+            <span class="venue">EMNLP 2023</span>
+            <h1 class="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight leading-tight text-gray-900 dark:text-white">Reinforcement Replaces Supervision: Query focused Summarization using Deep Reinforcement Learning</h1>
+            <!-- Author order as published in the EMNLP 2023 proceedings (ACL Anthology) -->
+            <p class="mt-5 text-gray-700 dark:text-gray-300 leading-relaxed">
+                <a href="../index.html" class="font-semibold text-gray-900 dark:text-white hover:underline">Swaroop Nath</a><sup>1</sup>,
+                <a href="https://en.wikipedia.org/wiki/Pushpak_Bhattacharyya" target="_blank" rel="noopener noreferrer" class="hover:underline">Pushpak Bhattacharyya</a><sup>1</sup>,
+                <a href="https://www.cse.iitb.ac.in/~harshadk/" target="_blank" rel="noopener noreferrer" class="hover:underline">Harshad Khadilkar</a><sup>2</sup>
+            </p>
+            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400"><sup>1</sup>IIT Bombay &nbsp;&nbsp; <sup>2</sup>TCS Research</p>
+            <div class="mt-6 flex flex-wrap justify-center gap-2">
+                <a class="pill" href="https://aclanthology.org/2023.emnlp-main.977.pdf" target="_blank" rel="noopener noreferrer"><i class="fas fa-file-pdf"></i> Paper</a>
+                <a class="pill" href="https://arxiv.org/abs/2311.17514" target="_blank" rel="noopener noreferrer"><i class="ai ai-arxiv"></i> arXiv</a>
+                <a class="pill" href="https://github.com/swaroop-nath/rl-qfs" target="_blank" rel="noopener noreferrer"><i class="fab fa-github"></i> Code</a>
+                <a class="pill" href="https://docs.google.com/presentation/d/1SwUdxfFakAXzXpB2iQmcB98tUvm_oj2BAUHVgtwJ7pU/edit" target="_blank" rel="noopener noreferrer"><i class="fas fa-person-chalkboard"></i> Slides</a>
+            </div>
+        </div>
+
+        <p class="mt-10 text-center text-lg leading-relaxed text-gray-700 dark:text-gray-300 max-w-2xl mx-auto">Training BART for query-focused summarization with policy-gradient rewards, instead of token-by-token supervision, improves ROUGE-L on ELI5 by about 10 points.</p>
+
+        <div class="mt-14 space-y-14">
+
+            <!-- ============================== DEMO ============================== -->
+            <section id="demo" class="scroll-mt-20">
+                <h2 class="section-title">Interactive Demo</h2>
+                <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">Score a summary with the rewards used in the paper, read outputs from the trained models, and browse the results.</p>
+
+                <div class="demo mt-5 relative">
+                    <div class="seg" role="group" aria-label="Demo view">
+                        <button type="button" data-tab="play" aria-pressed="true">Playground</button>
+                        <button type="button" data-tab="outputs" aria-pressed="false">Model outputs</button>
+                        <button type="button" data-tab="results" aria-pressed="false">Results</button>
+                    </div>
+
+                    <!-- ---------- Reward playground ---------- -->
+                    <div data-panel="play" class="mt-6">
+                        <!-- Query, document and reference summary: Table 1 of the paper -->
+                        <p class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Query</p>
+                        <p class="mt-1 text-gray-900 dark:text-white font-medium">What is String Pool in Java?</p>
+                        <details class="mt-3 text-sm">
+                            <summary class="cursor-pointer text-gray-500 dark:text-gray-400">Document (shortened, from Table&nbsp;1 of the paper)</summary>
+                            <p class="mt-2 leading-relaxed text-gray-600 dark:text-gray-400">String pool is nothing but a storage area in Java heap where string literals are stored. It is also known as String Intern Pool or String Constant Pool. It is just like object allocation. By default, it is empty and privately maintained by the Java &hellip;</p>
+                        </details>
+
+                        <div class="mt-5 grid gap-4 sm:grid-cols-2">
+                            <label class="block">
+                                <span class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Reference summary</span>
+                                <textarea id="ref" class="field mt-1.5 w-full h-32 leading-relaxed" maxlength="3000" spellcheck="false">String Pool, used to reduce the memory footprint, is a specific area in the memory allocated to the process used to store String literal declared within Java program.</textarea>
+                            </label>
+                            <label class="block">
+                                <span class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Candidate summary <span class="normal-case tracking-normal font-normal">(edit me)</span></span>
+                                <textarea id="cand" class="field mt-1.5 w-full h-32 leading-relaxed" maxlength="3000" spellcheck="false"></textarea>
+                            </label>
+                        </div>
+
+                        <div class="mt-3 flex flex-wrap items-center gap-2">
+                            <span class="text-xs text-gray-500 dark:text-gray-400">Try:</span>
+                            <div class="seg" role="group" aria-label="Candidate presets">
+                                <button type="button" data-preset="copy" aria-pressed="false">Reference</button>
+                                <button type="button" data-preset="para" aria-pressed="true">Paraphrase*</button>
+                                <button type="button" data-preset="shuffle" aria-pressed="false">Shuffled words*</button>
+                                <button type="button" data-preset="off" aria-pressed="false">Off-topic*</button>
+                            </div>
+                        </div>
+                        <p class="demo-note mt-2">* Written for this demo, not taken from the paper.</p>
+
+                        <div class="mt-6 space-y-4" aria-live="polite">
+                            <div>
+                                <div class="flex items-baseline justify-between gap-3">
+                                    <div><span class="font-medium text-gray-900 dark:text-white text-sm">Token-by-token match</span> <span class="text-xs text-gray-500 dark:text-gray-400">what cross-entropy rewards (Eq. 1)</span></div>
+                                    <span id="v-tok" class="text-sm font-semibold tabular-nums text-gray-900 dark:text-white"></span>
+                                </div>
+                                <div class="meter mt-1.5"><span id="m-tok" style="width:0"></span></div>
+                            </div>
+                            <div>
+                                <div class="flex items-baseline justify-between gap-3">
+                                    <div><span class="font-medium text-gray-900 dark:text-white text-sm">ROUGE-L</span> <span class="text-xs text-gray-500 dark:text-gray-400">recall-oriented, rewards coverage</span></div>
+                                    <span id="v-rouge" class="text-sm font-semibold tabular-nums text-gray-900 dark:text-white"></span>
+                                </div>
+                                <div class="meter mt-1.5"><span id="m-rouge" style="width:0"></span></div>
+                            </div>
+                            <div>
+                                <div class="flex items-baseline justify-between gap-3">
+                                    <div><span class="font-medium text-gray-900 dark:text-white text-sm">BLEU</span> <span class="text-xs text-gray-500 dark:text-gray-400">precision-oriented, mean of BLEU-1&hellip;4</span></div>
+                                    <span id="v-bleu" class="text-sm font-semibold tabular-nums text-gray-900 dark:text-white"></span>
+                                </div>
+                                <div class="meter mt-1.5"><span id="m-bleu" style="width:0"></span></div>
+                            </div>
+                            <div class="pt-1">
+                                <div class="flex items-baseline justify-between gap-3">
+                                    <div><span class="font-medium text-gray-900 dark:text-white text-sm">SfPEG</span> <span class="text-xs text-gray-500 dark:text-gray-400">semantic, from the passage embedder</span></div>
+                                    <span class="text-xs text-gray-500 dark:text-gray-400">not run in the browser</span>
+                                </div>
+                                <p class="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">Needs the fine-tuned BERT-large passage embedder (see <a href="#method" class="accent">Method</a>). It scores meaning, so it does not penalise rewording the way the lexical rewards above do.</p>
+                            </div>
+                        </div>
+
+                        <div class="mt-6">
+                            <p class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Candidate, with the words ROUGE-L matches</p>
+                            <p id="cand-view" class="mt-1.5 text-sm leading-relaxed text-gray-700 dark:text-gray-300"></p>
+                        </div>
+                        <p class="demo-note mt-4">Computed in your browser on lower-cased words, without stemming. ROUGE-L is the LCS-based F1. BLEU follows the paper's Table&nbsp;2 (mean of cumulative BLEU-1 to BLEU-4, with brevity penalty, no smoothing); the authors' implementation may differ in tokenisation. Token match compares words position by position, as an illustration of Eq.&nbsp;1.</p>
+                    </div>
+
+                    <!-- ---------- Model outputs ---------- -->
+                    <div data-panel="outputs" class="mt-6" hidden>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <label for="ex-select" class="text-xs text-gray-500 dark:text-gray-400">Example</label>
+                            <select id="ex-select" class="field">
+                                <option value="pop">Two-part question, all models (Table 18)</option>
+                                <option value="multi">Two queries, one document (Table 19)</option>
+                                <option value="random">Unrelated document (Table 20)</option>
+                            </select>
+                        </div>
+                        <div id="ex-query" class="mt-5"></div>
+                        <div id="ex-legend" class="mt-3 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-gray-600 dark:text-gray-400"></div>
+                        <div id="ex-model-row" class="mt-4"></div>
+                        <div id="ex-body" class="mt-4"></div>
+                        <p id="ex-note" class="mt-4 text-sm leading-relaxed text-gray-600 dark:text-gray-400"></p>
+                        <p class="demo-note mt-3">Outputs are reproduced from the paper's appendix; the documents are omitted there for readability unless shown.</p>
+                    </div>
+
+                    <!-- ---------- Results ---------- -->
+                    <div data-panel="results" class="mt-6" hidden>
+                        <div class="flex flex-wrap items-center gap-3">
+                            <div class="seg" role="group" aria-label="Test set" id="ds-seg">
+                                <button type="button" data-ds="eli5" aria-pressed="true">ELI5</button>
+                                <button type="button" data-ds="rqft" aria-pressed="false">RQFT</button>
+                                <button type="button" data-ds="rqftr" aria-pressed="false">RQFT, random doc</button>
+                                <button type="button" data-ds="debate" aria-pressed="false">DebatePedia</button>
+                            </div>
+                            <div class="seg" role="group" aria-label="Metric" id="metric-seg">
+                                <button type="button" data-m="0" aria-pressed="false">R-1</button>
+                                <button type="button" data-m="1" aria-pressed="false">R-2</button>
+                                <button type="button" data-m="2" aria-pressed="true">R-L</button>
+                            </div>
+                        </div>
+                        <p id="ds-note" class="mt-4 text-sm text-gray-600 dark:text-gray-400"></p>
+                        <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
+                                <span class="key"><svg width="12" height="10" aria-hidden="true"><rect width="12" height="10" rx="2" style="fill:var(--accent)"/></svg>Reinforcement learning (this paper)</span>
+                                <span class="key"><svg width="12" height="10" aria-hidden="true"><rect width="12" height="10" rx="2" style="fill:var(--series-3)"/></svg>Supervised baseline / prior work</span>
+                            </div>
+                            <button type="button" class="text-btn" id="bars-table-toggle" aria-expanded="false">Show table</button>
+                        </div>
+                        <div id="bars" class="chart mt-3 relative"></div>
+                        <div id="bars-table" class="mt-3 overflow-x-auto" hidden></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================== ABSTRACT ============================== -->
+            <section id="abstract" class="scroll-mt-20">
+                <h2 class="section-title">Abstract</h2>
+                <!-- Verbatim from the EMNLP 2023 proceedings (ACL Anthology) -->
+                <p class="mt-5 leading-relaxed text-gray-700 dark:text-gray-300">Query-focused Summarization (QfS) deals with systems that generate summaries from document(s) based on a query. Motivated by the insight that Reinforcement Learning (RL) provides a generalization to Supervised Learning (SL) for Natural Language Generation, and thereby performs better (empirically) than SL, we use an RL-based approach for this task of QfS. Additionally, we also resolve the conflict of employing RL in Transformers with Teacher Forcing. We develop multiple <em>Policy Gradient networks</em>, trained on various reward signals: ROUGE, BLEU, and Semantic Similarity, which lead to a <em>10-point improvement</em> over the State-of-the-Art approach on the ROUGE-L metric for a benchmark dataset (ELI5). We also show performance of our approach in zero-shot setting for another benchmark dataset (DebatePedia) &ndash; our approach leads to results comparable to baselines, which were specifically trained on DebatePedia. To aid the RL training, we propose a better semantic similarity reward, enabled by a <em>novel Passage Embedding</em> scheme developed using Cluster Hypothesis. Lastly, we contribute a <em>gold-standard test dataset</em> to further research in QfS and Long-form Question Answering (LfQA).</p>
+            </section>
+
+            <!-- ============================== METHOD ============================== -->
+            <section id="method" class="scroll-mt-20">
+                <h2 class="section-title">Method</h2>
+                <!-- Eq. 1, 2 and 3 of the paper (Section 3.1) -->
+                <div class="mt-5 grid gap-4 sm:grid-cols-2">
+                    <div class="rounded-lg border p-4" style="border-color:var(--line)">
+                        <p class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Supervised (cross-entropy)</p>
+                        <div class="eq mt-2" data-tex="\mathcal{L}_{MLE} = -\sum_{t=1}^{n} \mathbb{1}[y_t = y_t^*]\,\log \mathcal{P}(y_t^* \mid y_{<t}^*, \mathbf{q}, \mathbf{d})"></div>
+                        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Rewards a token-by-token match with the reference.</p>
+                    </div>
+                    <div class="rounded-lg border p-4" style="border-color:var(--line)">
+                        <p class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Policy gradient</p>
+                        <div class="eq mt-2" data-tex="\mathcal{L}_{PG} = -\sum_{t=1}^{n} \big(R(\tau) - b\big)\,\log \mathcal{P}(y_t^* \mid y_{<t}^*, \mathbf{q}, \mathbf{d})"></div>
+                        <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Replaces it with a sequence-level reward; the baseline <em>b</em> is the reward of the greedy decode.</p>
+                    </div>
+                </div>
+
+                <ol class="mt-8 space-y-5">
+                    <li class="flex gap-3">
+                        <span class="step-num">1</span>
+                        <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300"><strong class="text-gray-900 dark:text-white">Policy.</strong> BART-large reads the query and document concatenated, with positional embeddings extended to 1,568 tokens to fit ELI5's long inputs.</p>
+                    </li>
+                    <li class="flex gap-3">
+                        <span class="step-num">2</span>
+                        <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300"><strong class="text-gray-900 dark:text-white">Making RL affordable.</strong> RL needs the model to generate from its own outputs, which costs O(<em>n</em><sup>3</sup>) in attention over ~150-token summaries, against O(<em>n</em><sup>2</sup>) with Teacher Forcing. A two-pass decoder based on scheduled sampling feeds Gumbel-softmax samples from the first pass into the second, keeping O(<em>n</em><sup>2</sup>), with gradients through both passes.</p>
+                    </li>
+                    <li class="flex gap-3">
+                        <span class="step-num">3</span>
+                        <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300"><strong class="text-gray-900 dark:text-white">Rewards.</strong> The finished summary is scored against the reference with ROUGE-L, BLEU, SimCSE, SBERT or SfPEG, alone or combined (Table&nbsp;2).</p>
+                    </li>
+                    <li class="flex gap-3">
+                        <span class="step-num">4</span>
+                        <div class="min-w-0 text-sm leading-relaxed text-gray-700 dark:text-gray-300">
+                            <p><strong class="text-gray-900 dark:text-white">Mixed objective.</strong> Training keeps a small supervised term:</p>
+                            <div class="eq mt-1" data-tex="\mathcal{L}_{TOTAL} = \eta\,\mathcal{L}_{MLE} + (1-\eta)\,\mathcal{L}_{PG}, \qquad \eta = 0.1"></div>
+                        </div>
+                    </li>
+                </ol>
+
+                <!-- Section 3.2 and Appendix G; complexity from Appendix E -->
+                <div class="mt-8 rounded-lg p-4 sm:p-5" style="background:var(--surface-2); border:1px solid var(--line)">
+                    <p class="font-semibold text-gray-900 dark:text-white">SfPEG: Similarity From Passage EmbeddinG</p>
+                    <p class="mt-2 text-sm leading-relaxed text-gray-700 dark:text-gray-300">Averaging sentence embeddings gives only an approximate passage representation. SfPEG instead trains a passage embedder on the Cluster Hypothesis &mdash; <em>passages that answer the same information need should cluster together</em>. A BERT-large dual encoder learns to tell whether two Reddit answers reply to the same question; the reward is the cosine similarity between the embeddings of the generated and reference summaries.</p>
+                </div>
+            </section>
+
+            <!-- ============================== RESULTS ============================== -->
+            <section id="results" class="scroll-mt-20">
+                <h2 class="section-title">Does the Model Read the Document?</h2>
+                <!-- Table 6, Expt-II vs Expt-III, ROUGE-L. Drops are computed from those columns. -->
+                <p class="mt-5 text-sm leading-relaxed text-gray-700 dark:text-gray-300">On RQFT, replacing the document with an unrelated one costs the supervised baseline 5.4 ROUGE-L points but the RL models 15.8&ndash;17.8. The paper reads this as the RL models summarising the document, while the supervised model largely answers from the query alone (Section&nbsp;6.3).</p>
+                <div class="mt-4 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 dark:text-gray-400">
+                        <span class="key"><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="5" style="fill:var(--accent)"/></svg>True document</span>
+                        <span class="key"><svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="5" style="fill:var(--series-3)"/></svg>Random document</span>
+                    </div>
+                    <button type="button" class="text-btn" id="db-table-toggle" aria-expanded="false">Show table</button>
+                </div>
+                <div id="dumbbell" class="chart mt-3 relative"></div>
+                <div id="db-table" class="mt-3 overflow-x-auto" hidden></div>
+                <!-- Table 8, Section 5.2 -->
+                <p class="mt-6 text-sm leading-relaxed text-gray-700 dark:text-gray-300">In human evaluation of 50 RQFT samples by two annotators, BART R-SfPEG scored highest: fluency 3.46&thinsp;/&thinsp;3.48 out of 4 and correctness 0.48&thinsp;/&thinsp;0.44, against 3.08&thinsp;/&thinsp;3.12 and 0.26&thinsp;/&thinsp;0.28 for the supervised BART SL.</p>
+            </section>
+
+            <!-- ============================== DATASETS ============================== -->
+            <section id="datasets" class="scroll-mt-20">
+                <h2 class="section-title">Datasets</h2>
+                <div class="mt-5 grid gap-4 sm:grid-cols-2">
+                    <!-- Section 4.1, Table 3, Appendix K -->
+                    <div>
+                        <p class="font-semibold text-gray-900 dark:text-white">RQFT <span class="font-normal text-gray-500 dark:text-gray-400">&middot; Reliable QfS Tester</span></p>
+                        <p class="mt-1.5 text-sm leading-relaxed text-gray-700 dark:text-gray-300">250 hand-curated query&ndash;document&ndash;summary triplets from Wikipedia and high-school textbooks, across 13 domains. Documents carry 1.41 queries on average, to avoid topic centralisation.</p>
+                    </div>
+                    <!-- Section 4.2, Table 4, Appendix F -->
+                    <div>
+                        <p class="font-semibold text-gray-900 dark:text-white">RPEDT <span class="font-normal text-gray-500 dark:text-gray-400">&middot; Reddit Passage Embedding DataseT</span></p>
+                        <p class="mt-1.5 text-sm leading-relaxed text-gray-700 dark:text-gray-300">Questions and their answers scraped from 39 subreddits (154,722 training questions), used to train the SfPEG passage embedder.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ============================== CITATION ============================== -->
+            <section id="citation" class="scroll-mt-20">
+                <h2 class="section-title">Citation</h2>
+                <div class="bibtex mt-5"><button class="copy-btn" data-copy-target="bibtex-text">Copy</button><pre id="bibtex-text">@inproceedings{nath-etal-2023-reinforcement,
+    title = "Reinforcement Replaces Supervision: Query focused Summarization using Deep Reinforcement Learning",
+    author = "Nath, Swaroop  and
+      Bhattacharyya, Pushpak  and
+      Khadilkar, Harshad",
+    editor = "Bouamor, Houda  and
+      Pino, Juan  and
+      Bali, Kalika",
+    booktitle = "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing",
+    month = dec,
+    year = "2023",
+    address = "Singapore",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2023.emnlp-main.977/",
+    doi = "10.18653/v1/2023.emnlp-main.977",
+    pages = "15770--15789"
+}</pre></div>
+            </section>
+        </div>
+    </main>
+
+    <script>
+    (function () {
+        'use strict';
+        const $ = (s, r) => (r || document).querySelector(s);
+        const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
+        const SVGNS = 'http://www.w3.org/2000/svg';
+        const svgEl = (tag, attrs) => {
+            const el = document.createElementNS(SVGNS, tag);
+            for (const k in attrs) el.setAttribute(k, attrs[k]);
+            return el;
+        };
+        const fmt = (v, d) => v.toFixed(d === undefined ? 2 : d);
+
+        /* ------------------------------------------------------------------
+           Metrics. Words are lower-cased alphanumeric runs (no stemming).
+           METRICS-START */
+        function words(text) {
+            const out = [];
+            const re = /[A-Za-z0-9]+/g;
+            let m;
+            while ((m = re.exec(text))) out.push({ w: m[0].toLowerCase(), start: m.index, end: m.index + m[0].length });
+            return out;
+        }
+
+        // Longest common subsequence; returns its length and the matched candidate indices
+        function lcs(ref, cand) {
+            const n = ref.length, m = cand.length;
+            const dp = [];
+            for (let i = 0; i <= n; i++) dp.push(new Uint16Array(m + 1));
+            for (let i = 1; i <= n; i++) {
+                for (let j = 1; j <= m; j++) {
+                    dp[i][j] = ref[i - 1] === cand[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+                }
+            }
+            const matched = new Set();
+            let i = n, j = m;
+            while (i > 0 && j > 0) {
+                if (ref[i - 1] === cand[j - 1]) { matched.add(j - 1); i--; j--; }
+                else if (dp[i - 1][j] >= dp[i][j - 1]) i--;
+                else j--;
+            }
+            return { length: dp[n][m], matched };
+        }
+
+        function rougeL(ref, cand) {
+            const res = lcs(ref, cand);
+            if (!ref.length || !cand.length || !res.length) return { f: 0, matched: res.matched };
+            const p = res.length / cand.length, r = res.length / ref.length;
+            return { f: 2 * p * r / (p + r), matched: res.matched };
+        }
+
+        function ngramCounts(tokens, n) {
+            const counts = new Map();
+            for (let i = 0; i + n <= tokens.length; i++) {
+                const key = tokens.slice(i, i + n).join('\u0001');
+                counts.set(key, (counts.get(key) || 0) + 1);
+            }
+            return counts;
+        }
+
+        // Cumulative BLEU-maxN with brevity penalty, no smoothing
+        function bleu(ref, cand, maxN) {
+            if (!cand.length || !ref.length) return 0;
+            let logSum = 0;
+            for (let n = 1; n <= maxN; n++) {
+                const c = ngramCounts(cand, n), r = ngramCounts(ref, n);
+                let total = 0, clipped = 0;
+                c.forEach((count, key) => { total += count; clipped += Math.min(count, r.get(key) || 0); });
+                if (!total || !clipped) return 0;
+                logSum += Math.log(clipped / total);
+            }
+            const bp = cand.length > ref.length ? 1 : Math.exp(1 - ref.length / cand.length);
+            return bp * Math.exp(logSum / maxN);
+        }
+
+        // Table 2: mean over i = 1..4 of BLEU_i
+        function bleuMean(ref, cand) {
+            let s = 0;
+            for (let i = 1; i <= 4; i++) s += bleu(ref, cand, i);
+            return s / 4;
+        }
+
+        // Position-by-position agreement, as in the indicator of Eq. 1
+        function tokenMatch(ref, cand) {
+            if (!ref.length) return 0;
+            let hits = 0;
+            for (let t = 0; t < Math.min(ref.length, cand.length); t++) if (ref[t] === cand[t]) hits++;
+            return hits / ref.length;
+        }
+        /* METRICS-END */
+
+        /* ---------------------------- Tabs ---------------------------- */
+        const tabButtons = $$('[data-tab]');
+        tabButtons.forEach(btn => btn.addEventListener('click', () => {
+            tabButtons.forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+            $$('[data-panel]').forEach(p => { p.hidden = p.getAttribute('data-panel') !== btn.dataset.tab; });
+            if (btn.dataset.tab === 'results') drawBars();
+        }));
+
+        /* ------------------------- Playground ------------------------- */
+        const refBox = $('#ref'), candBox = $('#cand');
+        const PRESETS = {
+            copy: () => refBox.value,
+            para: () => 'Java keeps a String Pool, a dedicated region of heap memory where string literals are stored, so that duplicate strings share one copy and the program uses less memory.',
+            shuffle: () => {
+                // Deterministic shuffle of the reference's words
+                const w = refBox.value.replace(/[^A-Za-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+                let seed = 7;
+                for (let i = w.length - 1; i > 0; i--) {
+                    seed = (seed * 9301 + 49297) % 233280;
+                    const j = Math.floor(seed / 233280 * (i + 1));
+                    [w[i], w[j]] = [w[j], w[i]];
+                }
+                return w.join(' ');
+            },
+            off: () => 'Java is an object-oriented programming language whose programs are compiled to bytecode and run on the Java Virtual Machine.',
+        };
+        const presetButtons = $$('[data-preset]');
+        presetButtons.forEach(btn => btn.addEventListener('click', () => {
+            presetButtons.forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+            candBox.value = PRESETS[btn.dataset.preset]();
+            score();
+        }));
+        candBox.addEventListener('input', () => { presetButtons.forEach(b => b.setAttribute('aria-pressed', 'false')); score(); });
+        refBox.addEventListener('input', score);
+
+        function setMeter(id, v) {
+            $('#v-' + id).textContent = fmt(v);
+            $('#m-' + id).style.width = Math.max(0, Math.min(1, v)) * 100 + '%';
+        }
+
+        function score() {
+            const refW = words(refBox.value), candW = words(candBox.value);
+            const ref = refW.map(x => x.w), cand = candW.map(x => x.w);
+            const rl = rougeL(ref, cand);
+            setMeter('tok', tokenMatch(ref, cand));
+            setMeter('rouge', rl.f);
+            setMeter('bleu', bleuMean(ref, cand));
+
+            // Candidate text with the LCS words marked; built from text nodes only
+            const view = $('#cand-view');
+            view.textContent = '';
+            const text = candBox.value;
+            let pos = 0;
+            candW.forEach((tok, idx) => {
+                if (!rl.matched.has(idx)) return;
+                if (tok.start > pos) view.appendChild(document.createTextNode(text.slice(pos, tok.start)));
+                const mark = document.createElement('mark');
+                mark.className = 'lcs';
+                mark.textContent = text.slice(tok.start, tok.end);
+                view.appendChild(mark);
+                pos = tok.end;
+            });
+            view.appendChild(document.createTextNode(text.slice(pos)));
+            if (!text.trim()) view.textContent = '—';
+        }
+        candBox.value = PRESETS.para();
+        score();
+
+        /* ------------------------ Model outputs ------------------------ */
+        // Segments: [text, tag]; tag a/b = answers aspect 1/2 of the query,
+        // h = hallucinated, r = repeated word stem (as marked in the paper).
+        const EXAMPLES = {
+            // Table 18 (Appendix A)
+            pop: {
+                query: [['What is population growth?', 'a'], [' '], ['What does population change indicate for an area?', 'b']],
+                legend: ['a', 'b', 'h', 'r'],
+                models: {
+                    'BART SL': [
+                        ['Population growth refers to the change in number of inhabitants of a territory during a specific period of time', 'a'],
+                        [' . It can be expressed either in absolute numbers or in terms of percentage percentage of the total population . '],
+                        ['For example , let \'s say you have a region with a population of 1,000 people . Over the next 10 years , there will be an increase in population growth as more people move in and out of that area . This means that the population will increase by 10 %', 'h'],
+                        [' .'],
+                    ],
+                    'BART R': [
+                        ['Population change refers to the change in number of inhabitants of a territory during a specific period of time', 'a'],
+                        ['. This change may be positive as well as negative. Population growth occurs not only by increasing births rate but also due to decreasing death rate. There are two ways by which the population size changes – births and deaths. The crude birth rate (CBR) is a simple method of measuring the rate of births in a particular region. It can be expressed either in terms of absolute numbers or in numbers of live births per thousand of population. Similarly, the mortality rate is an important indicator of the region’s demographic structure, social advancement and levels of its economic development.'],
+                    ],
+                    'BART R-SEM': [
+                        ['By and large mortality rates are affected by the region’s demographic structure, social advancement and levels of its economic development. Population growth occurs not only by increasing births rate but also due to decreasing death rate. ⋯ When people move from one place to another places, their population may increase or decrease depending on their place of origin and the place they move to is called the Place of destination. '],
+                        ['Population change refers to the change in the total population of a territory during a specific period of time', 'a'],
+                        ['. '],
+                        ['Population change is an important indicator of economic and social development, socio-economic status and historical and cultural background of the territory', 'b'],
+                        ['.'],
+                    ],
+                    'BART R-B': [
+                        ['Population change refers to the change in number of inhabitants of a territory during a specific period of time', 'a'],
+                        ['. This change may be positive as well as negative. Population growth occurs not only by increasing births rate but also due to decreasing death rate. There are different ways by which the population size changes in a region depending on the region’s demographic structure, social advancement and levels of its economic development. It can be expressed either in absolute numbers or in terms of percentage. The crude birth rate (CBR) is a simple method of measuring mortality of any area and it is expressed in numbers of live births per thousand of population for a particular region.'],
+                    ],
+                    'BART R-SfPEG': [
+                        ['Population change refers to the change in number of inhabitants of a territory during a specific period of time', 'a'],
+                        ['. This change may be positive as well as negative. Population growth occurs not only by increasing births rate but also due to decreasing death rate. '],
+                        ['Population change is an important indicator of economic development, social upliftment and historical and cultural background of the region', 'b'],
+                        ['. It can be expressed either in absolute numbers or in terms of percentage. '],
+                        ['Percentage', 'r'], [' is the '], ['percentage', 'r'],
+                        [' of population in a particular geographical area that is increasing or decreasing over a time period as a function of its demographic structure, socio-economic advancement and other factors such as its geographical location, population density, age, sex ratio, etc. (%) Population growth is a dynamic process that affects the population size over time as it changes from one place to another.'],
+                    ],
+                    'BART SfPEG': [
+                        ['Population change refers to the change in number of inhabitants of a territory during a specific period of time', 'a'],
+                        ['. This change may be positive as well as negative. Population growth occurs not only by increasing births rate but also due to decreasing death rate. '],
+                        ['Population change is an important indicator of economic development, social upliftment and historical and cultural background of the region', 'b'],
+                        ['. It can be expressed either in absolute numbers or in terms of percentage. There are two ways by which the population size changes – births, deaths and migration. The crude birth rate (CBR) is expressed as the ratio of live births in a year per thousand of population. Conversely, the mortality rate is a simple method of measuring mortality of any area.'],
+                    ],
+                },
+                notes: {
+                    'BART SL': 'Answers only the first part, then adds an example that is not in the document.',
+                    'BART R': 'No hallucinated example, but the second part of the question is not answered.',
+                    'BART R-SEM': 'Answers both parts, with a lot of unrelated content; the paper attributes this to the approximate semantic reward.',
+                    'BART R-B': 'No hallucinated example, but the second part of the question is not answered.',
+                    'BART R-SfPEG': 'Answers both parts. ROUGE as a reward also shows up as repeated words with the same stem.',
+                    'BART SfPEG': 'Answers both parts, without a ROUGE reward.',
+                },
+            },
+            // Table 19 (Appendix B)
+            multi: {
+                queries: {
+                    'Query one': 'How has green revolution helped India, if at all?',
+                    'Query two': 'Why is a buffer stock created by the government?',
+                },
+                legend: ['h'],
+                models: {
+                    'Query one': {
+                        'BART SL': [
+                            ['I do n\'t think the green revolution has helped at all', 'h'],
+                            [' . The food insecure people are disproportionately large in some regions of the country because of poverty , tribal and remote areas , regions more prone to natural disasters etc . In fact , the states of Uttar Pradesh (eastern and south - eastern parts of India ) , Orissa , Andaman and Nicobar Islands , and West Bengal have been experiencing famine since the 1970 \'s .'],
+                        ],
+                        'BART R': [
+                            ['The food insecure people are disproportionately large in some regions of the country, such as economically backward states with high incidence of poverty, tribal and remote areas, regions more prone to natural disasters etc. After Independence, Indian policymakers adopted all measures to achieve self-sufficiency in food grains. India adopted a new strategy in agriculture, which resulted in ‘Green Revolution’, especially in the production of wheat and rice. The farmers are paid a pre-announced price for their crops. This price is called Minimum Support Price (MSP). The MSP is declared by the government every year before the sowing season to provide incentives to farmers for raising the productivity of these crops and to encourage them to increase their production in order to reduce their dependence on imported foodgrains (such as wheat, rice, maize, sugar, pulses, oilseeds etc.). In the mid-1960s, wheat was the most productive crop in India and it was grown in a large number of small and medium-scale farms in rural areas and in small towns and villages. These small farms were able to produce large quantities of foodgrain and the farmers were rewarded with a subsidy of Rs 1,000 per acre per hectare'],
+                        ],
+                    },
+                    'Query two': {
+                        'BART SL': [
+                            ['If there is a shortage of food in a region , the government can buy it from the market at a lower price than what people are willing to pay for it , and then distribute it to the people who need it . This way , they do n\'t have to worry about people going hungry all the time .'],
+                        ],
+                        'BART R': [
+                            ['Since the advent of the Green Revolution in the early-1970s, the country has avoided famine even during adverse weather conditions. India is aiming at Self-sufficiency in Foodgrains since Independence. The attainment of food security therefore involves eliminating current hunger and reducing the risks of future hunger. After Independence, Indian policymakers adopted all measures to achieve self-sufficient in food grains. This system has two components: (a) buffer stock, and (b) public distribution system. Buffer Stock is the stocks of grains procured by the government through the Food Corporation of India (FCI). The FCI purchases wheat and rice from the farmers in states where there is surplus production. These grains are sold to the consumers at a price lower than the market price of these grains, which is known as the Minimum Support Price (MSP). In the case of wheat or rice, it is sold at the MSP of Rs 2,000 per tonne and in case for rice at Rs 1,500/tonne of rice the price is Rs 3,200/towards Rs 4,300/tons for the same amount of grain. There are a buffer price to be paid to farmers for procuring the grains at these prices.'],
+                        ],
+                    },
+                },
+                notes: {
+                    'Query one': 'BART SL claims the Green Revolution has not helped, contradicting the document. BART R pulls the relevant arguments from the document.',
+                    'Query two': 'BART SL writes related sentences but ignores the query. BART R picks up the buffer-stock information from the document.',
+                },
+            },
+            // Table 20 (Appendix C)
+            random: {
+                query: [['Why do organisms need water?']],
+                legend: [],
+                pairs: {
+                    'BART SL': {
+                        doc: 'Primary activities include agriculture, animal husbandry, forestry, fishing, mining and quarrying, etc. Secondary activities include manufacturing industry, building and construction work, etc. Tertiary activities include transport, communications, commerce, administration and other services. The proportion of people working in different activities varies in developed and developing countries. Developed nations have a high proportion of people in secondary, and tertiary activities. Developing countries tend to have a higher proportion of their workforce engaged in primary activities. ⋯',
+                        out: 'Water is an essential part of the life cycle of every living thing . It \'s what keeps them alive and allows them to grow and reproduce . Without it , they would n\'t be able to do all the things they do . For example , water is essential for photosynthesis , which is the process of turning food into energy that can be used by other organisms .',
+                    },
+                    'BART R': {
+                        doc: 'During 1998, tropical cyclones formed within seven different tropical cyclone basins, located within various parts of the Atlantic, Pacific, and Indian Oceans. During the year, a total of 125 tropical cyclones had formed, with 72 of them have been named by various weather agencies when they attained maximum sustained winds of 35 knots (65 km/h, 40 mph). The strongest tropical cyclones of the year are Zeb, Ron and Susan which peaked with a pressure of 900 hPa (26.58 inHg). Hurricane Mitch of late ⋯',
+                        out: 'The most notable storms were Hurricane Georges and Hurricane Mitch. Four Category 5 tropical cyclones were formed in 1998. Although a semi-permanent anticyclone persisted through the summer of 1998, causing most of the storms to remain at sea, some storm did threaten the Baja California Peninsula due to a weak ridge of high pressure in the mid-latitudes, and the subtropical low pressure area over the central and eastern Pacific Ocean (Pacific Oscillation (POW)). However, the most powerful storms that formed during the season were the hurricanes and tropical depressions (tropical storms). The most destructive storms of this year were hurricanes, which caused significant damage and killed at least 11,000 people, making the system the second deadliest Atlantic hurricane in recorded history, behind only the Great Hurricane of 1780. In the North Atlantic basin, it was the deadliest hurricane season on record, with the damages amounting to $9.37 billion and $6.08 billion (1998 USD) in damage, respectively. The season had above average activity, featuring a record-breaking 30 tropical storms, as well as a high number of hurricanes with a maximum sustained winds of more than 111 mph (178 km/h).',
+                    },
+                },
+                notes: {
+                    'BART SL': 'Writes a plausible answer to the query that the document does not contain: the document is ignored.',
+                    'BART R': 'Summarises the (unrelated) document it was given, so the document does shape its output.',
+                },
+            },
+        };
+
+        const LEGEND = {
+            a: ['seg-a', 'Answers part 1'],
+            b: ['seg-b', 'Answers part 2'],
+            h: ['seg-h', 'Hallucinated'],
+            r: ['seg-r', 'Repeated word stem'],
+        };
+
+        function renderSegments(target, segs) {
+            target.textContent = '';
+            segs.forEach(seg => {
+                if (seg[1]) {
+                    const span = document.createElement('span');
+                    span.className = LEGEND[seg[1]][0];
+                    span.textContent = seg[0];
+                    target.appendChild(span);
+                } else {
+                    target.appendChild(document.createTextNode(seg[0]));
+                }
+            });
+        }
+
+        function makeSeg(options, current, onPick, label) {
+            const wrap = document.createElement('div');
+            wrap.className = 'seg';
+            wrap.setAttribute('role', 'group');
+            wrap.setAttribute('aria-label', label);
+            options.forEach(opt => {
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = opt;
+                b.setAttribute('aria-pressed', String(opt === current));
+                b.addEventListener('click', () => {
+                    $$('button', wrap).forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+                    onPick(opt);
+                });
+                wrap.appendChild(b);
+            });
+            return wrap;
+        }
+
+        function labelled(text) {
+            const p = document.createElement('p');
+            p.className = 'text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold';
+            p.textContent = text;
+            return p;
+        }
+
+        function textBlock(cls) {
+            const p = document.createElement('p');
+            p.className = cls || 'mt-1.5 text-sm leading-relaxed text-gray-700 dark:text-gray-300';
+            return p;
+        }
+
+        function showExample(key) {
+            const ex = EXAMPLES[key];
+            const qBox = $('#ex-query'), legend = $('#ex-legend'), row = $('#ex-model-row'), body = $('#ex-body'), note = $('#ex-note');
+            qBox.textContent = ''; legend.textContent = ''; row.textContent = ''; body.textContent = ''; note.textContent = '';
+
+            ex.legend.forEach(tag => {
+                const k = document.createElement('span');
+                k.className = 'key';
+                const sw = document.createElement('span');
+                sw.className = LEGEND[tag][0];
+                sw.textContent = 'Abc';
+                k.appendChild(sw);
+                k.appendChild(document.createTextNode(LEGEND[tag][1]));
+                legend.appendChild(k);
+            });
+
+            if (key === 'pop') {
+                qBox.appendChild(labelled('Query'));
+                const q = textBlock('mt-1 font-medium text-gray-900 dark:text-white');
+                renderSegments(q, ex.query);
+                qBox.appendChild(q);
+                const names = Object.keys(ex.models);
+                const pick = name => {
+                    body.textContent = '';
+                    const out = textBlock('text-sm leading-loose text-gray-700 dark:text-gray-300');
+                    renderSegments(out, ex.models[name]);
+                    body.appendChild(out);
+                    note.textContent = ex.notes[name];
+                };
+                row.appendChild(makeSeg(names, 'BART SL', pick, 'Model'));
+                pick('BART SL');
+            } else if (key === 'multi') {
+                const qNames = Object.keys(ex.queries);
+                const pick = qName => {
+                    qBox.textContent = '';
+                    qBox.appendChild(labelled(qName));
+                    const q = textBlock('mt-1 font-medium text-gray-900 dark:text-white');
+                    q.textContent = ex.queries[qName];
+                    qBox.appendChild(q);
+                    body.textContent = '';
+                    const grid = document.createElement('div');
+                    grid.className = 'grid gap-5 sm:grid-cols-2';
+                    Object.keys(ex.models[qName]).forEach(model => {
+                        const col = document.createElement('div');
+                        col.appendChild(labelled(model));
+                        const out = textBlock();
+                        renderSegments(out, ex.models[qName][model]);
+                        col.appendChild(out);
+                        grid.appendChild(col);
+                    });
+                    body.appendChild(grid);
+                    note.textContent = ex.notes[qName];
+                };
+                row.appendChild(makeSeg(qNames, 'Query one', pick, 'Query'));
+                pick('Query one');
+            } else {
+                qBox.appendChild(labelled('Query'));
+                const q = textBlock('mt-1 font-medium text-gray-900 dark:text-white');
+                q.textContent = ex.query[0][0];
+                qBox.appendChild(q);
+                const grid = document.createElement('div');
+                grid.className = 'grid gap-6 sm:grid-cols-2';
+                Object.keys(ex.pairs).forEach(model => {
+                    const col = document.createElement('div');
+                    col.appendChild(labelled('Random document given to ' + model));
+                    const d = textBlock('mt-1.5 text-sm leading-relaxed text-gray-500 dark:text-gray-400');
+                    d.textContent = ex.pairs[model].doc;
+                    col.appendChild(d);
+                    const out = document.createElement('div');
+                    out.className = 'mt-4';
+                    out.appendChild(labelled(model + ' output'));
+                    const o = textBlock();
+                    o.textContent = ex.pairs[model].out;
+                    out.appendChild(o);
+                    col.appendChild(out);
+                    const n = textBlock('mt-2 text-xs leading-relaxed text-gray-500 dark:text-gray-400');
+                    n.textContent = ex.notes[model];
+                    col.appendChild(n);
+                    grid.appendChild(col);
+                });
+                body.appendChild(grid);
+            }
+        }
+        $('#ex-select').addEventListener('change', e => showExample(e.target.value));
+        showExample('pop');
+
+        /* --------------------------- Results --------------------------- */
+        // Table 6 (ELI5 = Expt-I, RQFT = Expt-II, RQFT random doc = Expt-III) and Table 9 (DebatePedia, Appendix D).
+        // kind: rl = trained with RL in this paper; sl = supervised baseline; prior = earlier work.
+        const RESULTS = {
+            eli5: {
+                note: 'ELI5 test set (Expt-I).',
+                rows: [
+                    ['Fan et al. (2019)', 'prior work', 'prior', [28.9, 5.4, 23.10]],
+                    ['Lewis et al. (2020)', 'BART, prior work', 'prior', [30.6, 6.2, 24.3]],
+                    ['BART SL', 'cross-entropy', 'sl', [29.68, 5.89, 25.44]],
+                    ['BART R', 'ROUGE-L', 'rl', [38.93, 8.05, 34.54]],
+                    ['BART R-SEM', 'ROUGE-L + SimCSE', 'rl', [38.02, 6.56, 33.13]],
+                    ['BART R-B', 'ROUGE-L + BLEU', 'rl', [39.52, 8.25, 34.92]],
+                    ['BART R-SBERT', 'ROUGE-L + SBERT', 'rl', [36.9, 6.36, 32.8]],
+                    ['BART R-SfPEG', 'ROUGE-L + SfPEG', 'rl', [39.40, 6.92, 34.10]],
+                    ['BART SfPEG', 'SfPEG', 'rl', [34.76, 5.96, 29.66]],
+                ],
+            },
+            rqft: {
+                note: 'RQFT, the paper’s hand-curated test set (Expt-II). BART SL is the authors’ implementation of Lewis et al. (2020).',
+                rows: [
+                    ['Fan et al. (2019)', 'prior work', 'prior', [28.82, 6.97, 25.41]],
+                    ['BART SL', 'cross-entropy', 'sl', [29.67, 7.88, 26.40]],
+                    ['BART R', 'ROUGE-L', 'rl', [43.08, 15.30, 39.08]],
+                    ['BART R-SEM', 'ROUGE-L + SimCSE', 'rl', [44.12, 15.15, 40.39]],
+                    ['BART R-B', 'ROUGE-L + BLEU', 'rl', [43.46, 15.67, 39.29]],
+                    ['BART R-SBERT', 'ROUGE-L + SBERT', 'rl', [42.93, 15.10, 39.56]],
+                    ['BART R-SfPEG', 'ROUGE-L + SfPEG', 'rl', [45.52, 16.83, 41.29]],
+                    ['BART SfPEG', 'SfPEG', 'rl', [44.30, 15.79, 40.39]],
+                ],
+            },
+            rqftr: {
+                note: 'RQFT with each document swapped for an unrelated one (Expt-III). Scores are expected to fall; a model that reads the document should fall more.',
+                rows: [
+                    ['Fan et al. (2019)', 'prior work', 'prior', [23.13, 4.39, 20.91]],
+                    ['BART SL', 'cross-entropy', 'sl', [23.32, 4.51, 20.96]],
+                    ['BART R', 'ROUGE-L', 'rl', [24.38, 4.40, 22.17]],
+                    ['BART R-SEM', 'ROUGE-L + SimCSE', 'rl', [25.39, 4.51, 23.06]],
+                    ['BART R-B', 'ROUGE-L + BLEU', 'rl', [26.01, 4.88, 23.45]],
+                    ['BART R-SBERT', 'ROUGE-L + SBERT', 'rl', [25.41, 4.47, 23.19]],
+                    ['BART R-SfPEG', 'ROUGE-L + SfPEG', 'rl', [25.89, 4.99, 23.50]],
+                    ['BART SfPEG', 'SfPEG', 'rl', [25.82, 4.63, 23.61]],
+                ],
+            },
+            debate: {
+                note: 'DebatePedia test set. BART R-SfPEG is the ELI5-trained model used zero-shot; the other models were trained or fine-tuned on DebatePedia.',
+                rows: [
+                    ['BertAbs', 'Liu & Lapata (2019)', 'prior', [13.3, 2.8, 2.8]],
+                    ['BART', 'Lewis et al. (2020)', 'prior', [21.4, 6.3, 18.4]],
+                    ['LQSum', 'Xu & Lapata (2022)', 'prior', [23.5, 7.2, 20.6]],
+                    ['BART R-SfPEG', 'zero-shot', 'rl', [24.2, 6.9, 20.7]],
+                ],
+            },
+        };
+        const METRIC_NAMES = ['ROUGE-1', 'ROUGE-2', 'ROUGE-L'];
+        let currentDs = 'eli5', currentMetric = 2;
+
+        $$('#ds-seg [data-ds]').forEach(btn => btn.addEventListener('click', () => {
+            $$('#ds-seg [data-ds]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+            currentDs = btn.dataset.ds;
+            drawBars();
+        }));
+        $$('#metric-seg [data-m]').forEach(btn => btn.addEventListener('click', () => {
+            $$('#metric-seg [data-m]').forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+            currentMetric = Number(btn.dataset.m);
+            drawBars();
+        }));
+
+        function niceMax(v) {
+            const step = v <= 20 ? 5 : 10;
+            return Math.ceil(v / step) * step;
+        }
+
+        // One tooltip per chart container
+        function tooltipFor(container) {
+            let tip = $('.chart-tip', container);
+            if (!tip) {
+                tip = document.createElement('div');
+                tip.className = 'chart-tip';
+                tip.hidden = true;
+                container.appendChild(tip);
+            }
+            return tip;
+        }
+        function showTip(container, lines, x, y) {
+            const tip = tooltipFor(container);
+            tip.textContent = '';
+            const strong = document.createElement('strong');
+            strong.textContent = lines[0];
+            tip.appendChild(strong);
+            lines.slice(1).forEach(l => {
+                tip.appendChild(document.createElement('br'));
+                tip.appendChild(document.createTextNode(l));
+            });
+            tip.hidden = false;
+            const w = container.clientWidth;
+            const tw = tip.offsetWidth;
+            tip.style.left = Math.max(0, Math.min(w - tw, x - tw / 2)) + 'px';
+            tip.style.top = (y - tip.offsetHeight - 8) + 'px';
+        }
+        function hideTip(container) { const t = $('.chart-tip', container); if (t) t.hidden = true; }
+
+        // Rounded data-end, square at the baseline
+        function barPath(x0, y, w, h) {
+            const r = Math.min(4, w, h / 2);
+            if (w <= 0) return '';
+            return `M${x0},${y}h${w - r}a${r},${r} 0 0 1 ${r},${r}v${h - 2 * r}a${r},${r} 0 0 1 -${r},${r}h-${w - r}Z`;
+        }
+
+        function drawBars() {
+            const box = $('#bars');
+            if (!box || box.offsetParent === null) return;
+            const data = RESULTS[currentDs];
+            $('#ds-note').textContent = data.note;
+            const rows = data.rows;
+            const W = box.clientWidth;
+            const labelW = W < 480 ? 112 : 168;
+            const valueW = 42;
+            const rowH = 38, barH = 14, top = 4, axisH = 24;
+            const plotW = Math.max(60, W - labelW - valueW);
+            const vals = rows.map(r => r[3][currentMetric]);
+            const xMax = niceMax(Math.max.apply(null, vals));
+            const step = xMax <= 20 ? 5 : 10;
+            const H = top + rows.length * rowH + axisH;
+            const x = v => labelW + v / xMax * plotW;
+
+            const accent = cssVar('--accent'), grey = cssVar('--series-3'), line = cssVar('--line'),
+                  fg = cssVar('--fg'), muted = cssVar('--muted'), faint = cssVar('--faint');
+
+            const svg = svgEl('svg', { width: W, height: H, role: 'list', 'aria-label': METRIC_NAMES[currentMetric] + ' by model' });
+            for (let t = 0; t <= xMax; t += step) {
+                svg.appendChild(svgEl('line', { x1: x(t), x2: x(t), y1: top, y2: H - axisH, stroke: line, 'stroke-width': 1 }));
+                const lbl = svgEl('text', { x: x(t), y: H - 6, 'text-anchor': 'middle', 'font-size': 11, fill: faint, style: 'font-variant-numeric:tabular-nums' });
+                lbl.textContent = t;
+                svg.appendChild(lbl);
+            }
+
+            rows.forEach((r, i) => {
+                const y0 = top + i * rowH;
+                const v = r[3][currentMetric];
+                const g = svgEl('g', { class: 'row', tabindex: 0, role: 'listitem', 'aria-label': `${r[0]} (${r[1]}): ${METRIC_NAMES[currentMetric]} ${v}` });
+                g.appendChild(svgEl('rect', { class: 'row-bg', x: 1, y: y0 + 1, width: W - 2, height: rowH - 2, rx: 4, fill: 'transparent' }));
+                const name = svgEl('text', { x: labelW - 10, y: y0 + 16, 'text-anchor': 'end', 'font-size': 12.5, fill: fg, 'font-weight': r[2] === 'rl' ? 600 : 400 });
+                name.textContent = r[0];
+                const sub = svgEl('text', { x: labelW - 10, y: y0 + 30, 'text-anchor': 'end', 'font-size': 10.5, fill: muted });
+                sub.textContent = r[1];
+                g.appendChild(name);
+                g.appendChild(sub);
+                const by = y0 + (rowH - barH) / 2;
+                g.appendChild(svgEl('path', { class: 'row-mark', d: barPath(x(0), by, x(v) - x(0), barH), fill: r[2] === 'rl' ? accent : grey }));
+                const val = svgEl('text', { x: x(v) + 6, y: by + barH - 2.5, 'font-size': 12, fill: fg, style: 'font-variant-numeric:tabular-nums' });
+                val.textContent = v.toFixed(2);
+                g.appendChild(val);
+                const show = () => showTip(box, [v.toFixed(2) + ' ' + METRIC_NAMES[currentMetric], r[0] + ' · ' + r[1]], x(v), by);
+                g.addEventListener('pointerenter', show);
+                g.addEventListener('pointerleave', () => hideTip(box));
+                g.addEventListener('focus', show);
+                g.addEventListener('blur', () => hideTip(box));
+                svg.appendChild(g);
+            });
+
+            const tip = $('.chart-tip', box);
+            box.textContent = '';
+            box.appendChild(svg);
+            if (tip) { tip.hidden = true; box.appendChild(tip); }
+
+            // Table twin
+            const table = buildTable(['Model', 'Trained with', 'R-1', 'R-2', 'R-L'],
+                rows.map(r => [r[0], r[1], r[3][0].toFixed(2), r[3][1].toFixed(2), r[3][2].toFixed(2)]),
+                rows.map(r => r[2] === 'rl'));
+            const holder = $('#bars-table');
+            holder.textContent = '';
+            holder.appendChild(table);
+        }
+
+        function buildTable(head, body, emphasis) {
+            const t = document.createElement('table');
+            t.className = 'results';
+            const thead = document.createElement('thead');
+            const hr = document.createElement('tr');
+            head.forEach((h, i) => {
+                const th = document.createElement('th');
+                th.textContent = h;
+                if (i >= 2) th.className = 'num';
+                hr.appendChild(th);
+            });
+            thead.appendChild(hr);
+            t.appendChild(thead);
+            const tb = document.createElement('tbody');
+            body.forEach((row, ri) => {
+                const tr = document.createElement('tr');
+                if (emphasis && emphasis[ri]) tr.className = 'ours';
+                row.forEach((c, i) => {
+                    const td = document.createElement('td');
+                    td.textContent = c;
+                    if (i >= 2) td.className = 'num';
+                    tr.appendChild(td);
+                });
+                tb.appendChild(tr);
+            });
+            t.appendChild(tb);
+            return t;
+        }
+
+        function wireTableToggle(btnId, tableId) {
+            const btn = $('#' + btnId), tbl = $('#' + tableId);
+            btn.addEventListener('click', () => {
+                tbl.hidden = !tbl.hidden;
+                btn.setAttribute('aria-expanded', String(!tbl.hidden));
+                btn.textContent = tbl.hidden ? 'Show table' : 'Hide table';
+            });
+        }
+        wireTableToggle('bars-table-toggle', 'bars-table');
+        wireTableToggle('db-table-toggle', 'db-table');
+
+        /* --------------------------- Dumbbell --------------------------- */
+        // Table 6, ROUGE-L: Expt-II (true document) vs Expt-III (random document)
+        const DB = [
+            ['Fan et al. (2019)', 'prior work', 25.41, 20.91],
+            ['BART SL', 'cross-entropy', 26.40, 20.96],
+            ['BART R', 'ROUGE-L', 39.08, 22.17],
+            ['BART R-SEM', 'ROUGE-L + SimCSE', 40.39, 23.06],
+            ['BART R-B', 'ROUGE-L + BLEU', 39.29, 23.45],
+            ['BART R-SBERT', 'ROUGE-L + SBERT', 39.56, 23.19],
+            ['BART R-SfPEG', 'ROUGE-L + SfPEG', 41.29, 23.50],
+            ['BART SfPEG', 'SfPEG', 40.39, 23.61],
+        ];
+
+        function drawDumbbell() {
+            const box = $('#dumbbell');
+            const W = box.clientWidth;
+            const labelW = W < 480 ? 112 : 168;
+            const dropW = 46;
+            const rowH = 38, top = 18, axisH = 24;
+            const plotW = Math.max(60, W - labelW - dropW - 8);
+            const lo = 15, hi = 45;
+            const H = top + DB.length * rowH + axisH;
+            const x = v => labelW + (v - lo) / (hi - lo) * plotW;
+            const accent = cssVar('--accent'), grey = cssVar('--series-3'), line = cssVar('--line'),
+                  fg = cssVar('--fg'), muted = cssVar('--muted'), faint = cssVar('--faint'), surface = cssVar('--surface');
+
+            const svg = svgEl('svg', { width: W, height: H, role: 'list', 'aria-label': 'ROUGE-L with the true and a random document' });
+            for (let t = lo; t <= hi; t += 5) {
+                svg.appendChild(svgEl('line', { x1: x(t), x2: x(t), y1: top, y2: H - axisH, stroke: line, 'stroke-width': 1 }));
+                const lbl = svgEl('text', { x: x(t), y: H - 6, 'text-anchor': 'middle', 'font-size': 11, fill: faint, style: 'font-variant-numeric:tabular-nums' });
+                lbl.textContent = t;
+                svg.appendChild(lbl);
+            }
+            const dropHead = svgEl('text', { x: x(hi) + 8, y: 11, 'font-size': 10.5, fill: faint });
+            dropHead.textContent = 'Drop';
+            svg.appendChild(dropHead);
+            DB.forEach((r, i) => {
+                const y0 = top + i * rowH, cy = y0 + rowH / 2;
+                const drop = r[2] - r[3];
+                const g = svgEl('g', { class: 'row', tabindex: 0, role: 'listitem', 'aria-label': `${r[0]}: ${r[2]} with the true document, ${r[3]} with a random one` });
+                g.appendChild(svgEl('rect', { class: 'row-bg', x: 1, y: y0 + 1, width: W - 2, height: rowH - 2, rx: 4, fill: 'transparent' }));
+                const name = svgEl('text', { x: labelW - 10, y: y0 + 16, 'text-anchor': 'end', 'font-size': 12.5, fill: fg, 'font-weight': r[0].startsWith('BART ') && r[0] !== 'BART SL' ? 600 : 400 });
+                name.textContent = r[0];
+                const sub = svgEl('text', { x: labelW - 10, y: y0 + 30, 'text-anchor': 'end', 'font-size': 10.5, fill: muted });
+                sub.textContent = r[1];
+                g.appendChild(name);
+                g.appendChild(sub);
+                g.appendChild(svgEl('line', { x1: x(r[3]), x2: x(r[2]), y1: cy, y2: cy, stroke: grey, 'stroke-width': 2, 'stroke-linecap': 'round' }));
+                g.appendChild(svgEl('circle', { class: 'row-mark', cx: x(r[3]), cy, r: 5, fill: grey, stroke: surface, 'stroke-width': 2 }));
+                g.appendChild(svgEl('circle', { class: 'row-mark', cx: x(r[2]), cy, r: 5, fill: accent, stroke: surface, 'stroke-width': 2 }));
+                const d = svgEl('text', { x: x(hi) + 8, y: cy + 4, 'font-size': 11.5, fill: muted, style: 'font-variant-numeric:tabular-nums' });
+                d.textContent = '−' + drop.toFixed(1);
+                g.appendChild(d);
+                const show = () => showTip(box, [r[2].toFixed(2) + ' → ' + r[3].toFixed(2) + ' ROUGE-L', r[0] + ' · true → random document'], (x(r[2]) + x(r[3])) / 2, cy - 6);
+                g.addEventListener('pointerenter', show);
+                g.addEventListener('pointerleave', () => hideTip(box));
+                g.addEventListener('focus', show);
+                g.addEventListener('blur', () => hideTip(box));
+                svg.appendChild(g);
+            });
+
+            const tip = $('.chart-tip', box);
+            box.textContent = '';
+            box.appendChild(svg);
+            if (tip) { tip.hidden = true; box.appendChild(tip); }
+
+            const holder = $('#db-table');
+            holder.textContent = '';
+            holder.appendChild(buildTable(['Model', 'Trained with', 'True doc', 'Random doc', 'Drop'],
+                DB.map(r => [r[0], r[1], r[2].toFixed(2), r[3].toFixed(2), (r[2] - r[3]).toFixed(2)]),
+                DB.map(r => r[0] !== 'BART SL' && r[0].startsWith('BART'))));
+        }
+
+        /* ------------------------ Redraw hooks ------------------------ */
+        const redraw = () => { drawBars(); drawDumbbell(); };
+        document.addEventListener('themechange', redraw);
+        let resizeTimer;
+        window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(redraw, 120); });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            drawDumbbell();
+            drawBars();
+            if (window.katex) {
+                $$('[data-tex]').forEach(el => katex.render(el.getAttribute('data-tex'), el, { displayMode: true, throwOnError: false }));
+            }
+        });
+    })();
+    </script>
+</body>
+</html>
