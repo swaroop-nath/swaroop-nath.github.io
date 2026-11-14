@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task-Aligned Rewards &middot; Swaroop Nath</title>
+    <meta name="description" content="What summarization taught me about RLHF: from hand-picked rewards, to rewards learned from preferences, to a decomposed reward that needs far less preference data.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['DM Sans', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'] } } },
+        }
+    </script>
+    <link rel="stylesheet" href="../assets/project.css">
+    <script src="../assets/project.js"></script>
+    <style>
+        .prose-post p { line-height: 1.75; }
+        .prose-post h2 { margin-top: 3rem; font-size: 1.35rem; font-weight: 600; letter-spacing: -0.01em; color: var(--fg-strong); }
+        .prose-post a.ref { color: var(--accent); }
+        .prose-post a.ref:hover { text-decoration: underline; }
+        .katex { font-size: 1.05em; }
+
+        .added-label { color: var(--accent); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+
+        .plot { position: relative; width: 100%; }
+        .plot svg { display: block; overflow: visible; }
+        .tip {
+            position: absolute; pointer-events: none; z-index: 5;
+            background: var(--surface); border: 1px solid var(--line); border-radius: 0.375rem;
+            padding: 0.4rem 0.55rem; font-size: 0.75rem; line-height: 1.45; color: var(--fg);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.12); white-space: nowrap;
+        }
+        .tip b { color: var(--fg-strong); font-weight: 600; }
+        .legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; font-size: 0.75rem; color: var(--muted); }
+        .legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+        .sw-line { width: 1.1rem; height: 0; border-top: 2px solid; display: inline-block; }
+
+        .ctl { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
+        .ctl label { color: var(--fg); white-space: nowrap; }
+        .ctl output { color: var(--fg-strong); font-variant-numeric: tabular-nums; min-width: 3.5rem; text-align: right; }
+        @media (max-width: 480px) { .ctl { grid-template-columns: 1fr auto; } .ctl input { grid-column: 1 / -1; grid-row: 2; } }
+        .btn-sm { border: 1px solid var(--line); border-radius: 0.375rem; padding: 0.25rem 0.6rem; font-size: 0.8rem; color: var(--muted); background: var(--surface); }
+        .btn-sm:hover { color: var(--accent); border-color: var(--accent); }
+
+        /* Metric bars in the paraphrase demo */
+        .mrow { display: grid; grid-template-columns: 8.5rem 1fr 3rem; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
+        @media (max-width: 480px) { .mrow { grid-template-columns: 6.5rem 1fr 2.75rem; } }
+        .mrow .name { color: var(--fg); }
+        .mrow .name small { display: block; color: var(--faint); font-size: 0.7rem; }
+        .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+        .bar > i { display: block; height: 100%; border-radius: 4px; background: var(--accent); transition: width 200ms ease; }
+        .mrow .val { text-align: right; font-variant-numeric: tabular-nums; color: var(--fg-strong); font-weight: 600; }
+        .refline { font-size: 0.9rem; color: var(--fg); }
+        textarea.field { width: 100%; resize: vertical; min-height: 3rem; line-height: 1.5; }
+
+        .reward-table td, .reward-table th { vertical-align: top; }
+        .reward-table td:first-child { white-space: nowrap; }
+        @media (max-width: 560px) { .reward-table td:first-child { white-space: normal; } }
+
+        .steps { counter-reset: s; }
+        .steps li { counter-increment: s; display: flex; gap: 0.75rem; }
+        .steps li::before { content: counter(s); flex: none; width: 1.5rem; height: 1.5rem; border-radius: 9999px; border: 1px solid var(--accent); color: var(--accent); font-size: 0.75rem; font-weight: 600; display: grid; place-items: center; margin-top: 0.2rem; }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-200">
+
+    <header class="bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+        <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <div>
+                <a href="../index.html" class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">Swaroop Nath</a>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="hidden sm:flex items-center space-x-5 text-sm text-gray-500 dark:text-gray-400">
+                    <a href="../index.html#about" class="hover:text-gray-900 dark:hover:text-white">About</a>
+                    <a href="../index.html#news" class="hover:text-gray-900 dark:hover:text-white">News</a>
+                    <a href="../index.html#publications" class="hover:text-gray-900 dark:hover:text-white">Publications</a>
+                    <a href="../talks.html" class="hover:text-gray-900 dark:hover:text-white">Talks</a>
+                    <a href="../blog.html" class="text-gray-900 dark:text-white">Blog</a>
+                </div>
+                <button id="theme-toggle-main" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400">
+                    <span id="theme-icon-container"><i data-lucide="moon" class="h-5 w-5"></i></span>
+                    <span class="sr-only">Toggle theme</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <a href="../blog.html" class="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+            <i data-lucide="arrow-left" class="h-4 w-4"></i> Blog
+        </a>
+
+        <h1 class="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight leading-tight text-gray-900 dark:text-white">Task-Aligned Rewards: What Summarization Taught Me About RLHF</h1>
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Swaroop Nath &middot; June 2024</p>
+
+        <aside class="mt-6 rounded-lg border p-4 text-sm leading-relaxed" style="border-color: var(--accent); background: var(--accent-soft);">
+            <p class="font-semibold text-gray-900 dark:text-white"><i class="fas fa-wand-magic-sparkles mr-1.5" style="color: var(--accent)"></i> Written by Claude, from my own work</p>
+            <p class="mt-1.5 text-gray-700 dark:text-gray-300">
+                Claude (Anthropic&rsquo;s AI model) wrote this post in my voice, from the papers and talks of my MS at IIT Bombay. The ideas, results and opinions come from that material, which is linked throughout and listed under <a href="#sources" class="accent font-semibold">Sources</a>. Claude wrote the text and built the interactive figures.
+            </p>
+        </aside>
+
+        <article class="prose-post mt-10 text-gray-700 dark:text-gray-300">
+            <p>My MS thesis kept returning to one question: when we train a model to write a summary, what exactly are we rewarding? This post follows how my answer changed, from rewards I picked by hand, to rewards learned from human preferences, to a middle path that takes a little from each.</p>
+
+            <h2>Many right answers</h2>
+            <p class="mt-4">Supervised fine-tuning learns a mapping from input to output by maximum likelihood: at every position, raise the probability of the reference token. That teaches the model <em>a</em> correct output. Language rarely has only one. The same content can be written many ways:</p>
+            <ul class="mt-3 space-y-1 pl-4 text-gray-800 dark:text-gray-200">
+                <li>The quick brown fox jumps over the lazy dog.</li>
+                <li>The swift brown fox leaps over the sleepy dog.</li>
+                <li>The agile brown fox leaps across the sluggish dog.</li>
+            </ul>
+            <p class="mt-4">A token-by-token objective counts the last two as mostly wrong. Reinforcement learning lifts that restriction. The model generates a whole output, a reward function scores it, and the REINFORCE trick turns that score into a gradient, even though the scoring itself is not differentiable. The reward can be any measure of quality we like. So the real question becomes: <em>which</em> reward?</p>
+
+            <div class="demo my-8" id="para-demo">
+                <p class="text-sm text-gray-600 dark:text-gray-400"><span class="added-label">Interactive</span> Score a candidate against the reference, the way a reward function would. Edit it, or try the presets.</p>
+                <p class="refline mt-4"><span class="text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold mr-2">Reference</span><span id="ref-text">The quick brown fox jumps over the lazy dog.</span></p>
+                <label for="cand" class="block mt-4 text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400 font-semibold">Candidate</label>
+                <textarea id="cand" class="field mt-1.5" rows="2" spellcheck="false"></textarea>
+                <div class="seg mt-3" role="group" aria-label="Candidate presets">
+                    <button type="button" data-preset="0">Paraphrase 1</button>
+                    <button type="button" data-preset="1">Paraphrase 2</button>
+                    <button type="button" data-preset="2">One word added*</button>
+                    <button type="button" data-preset="3">Meaning flipped*</button>
+                </div>
+                <div class="mt-5 space-y-3" id="metrics"></div>
+                <p class="demo-note mt-4">Paraphrases are from my lecture slides; * written for this demo. Scores are computed in your browser on lower-cased words. Token match is position-by-position agreement, what maximum likelihood rewards. ROUGE-L is the F1 of the longest common subsequence; BLEU is the mean of cumulative BLEU-1 to BLEU-4.</p>
+            </div>
+
+            <p>Two things stand out. Adding a single word at the front wrecks the token-by-token score while the overlap rewards barely move. And flipping the meaning earns as much ROUGE-L as the second paraphrase, and about twice the BLEU of either. Lexical rewards are more forgiving than maximum likelihood, but they do not read.</p>
+
+            <h2>Thesis: let the task define the reward</h2>
+            <p class="mt-4">My first answer was to ask what the task needs. For query-focused summarization, a good summary is relevant to the query, relevant to the document, covers every aspect, and is concise, fluent and coherent. Some of these properties are specific to query-focused summarization, some to summarization in general, and some to language. Each is a reward we would want to optimize.</p>
+            <p class="mt-4">Writing them down as functions is the hard part, and every simplifying assumption risks pulling us away from the original goal. Earlier work on RL for summarization optimized one property at a time:</p>
+            <div class="mt-5 overflow-x-auto">
+                <table class="results reward-table">
+                    <thead><tr><th>Reward</th><th>Promotes</th><th>Cannot promote</th></tr></thead>
+                    <tbody>
+                        <tr><td>ROUGE <span class="text-gray-400">(<a class="ref" href="https://arxiv.org/abs/1705.04304" target="_blank" rel="noopener noreferrer">Paulus et al., 2018</a>)</span></td><td>Lexical overlap</td><td>Semantic diversity</td></tr>
+                        <tr><td>BERTScore <span class="text-gray-400">(<a class="ref" href="https://arxiv.org/abs/1909.00141" target="_blank" rel="noopener noreferrer">Li et al., 2019</a>)</span></td><td>Semantic diversity</td><td>Informativeness</td></tr>
+                        <tr><td>Saliency <span class="text-gray-400">(<a class="ref" href="https://arxiv.org/abs/1804.06451" target="_blank" rel="noopener noreferrer">Pasunuru &amp; Bansal, 2018</a>)</span></td><td>Coverage</td><td>Faithfulness</td></tr>
+                        <tr><td>Entailment <span class="text-gray-400">(<a class="ref" href="https://arxiv.org/abs/2306.00186" target="_blank" rel="noopener noreferrer">Roit et al., 2023</a>)</span></td><td>Faithfulness</td><td>&ndash;</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="mt-5">Our shortcut was to notice that the reference summary already has all of these properties. So instead of rewarding each property, reward closeness to the reference, both lexically and semantically. ROUGE and BLEU cover the lexical side. For the semantic side, we built a passage embedding on the Cluster Hypothesis: passages that answer similar information needs tend to cluster together. Trained on Reddit answers to the same questions, it gives a similarity reward that does not punish rewording.</p>
+            <p class="mt-4">In <a class="ref" href="../rl-qfs/index.html">our EMNLP 2023 paper</a>, policy-gradient models trained this way improved ROUGE-L by 10 points over the previous state of the art on ELI5. The more telling test was replacing the document with a random one. On our test set, the supervised model lost only 5.4 ROUGE-L points, because it was largely answering from the query. The RL models lost 15.8 to 17.8 points, because they were actually reading the document.</p>
+            <p class="mt-4">Rewards also leave fingerprints. ROUGE pays for overlap, so our RL summaries grew verbose and drifted into related but unnecessary topics, all while the reward kept rising. We needed a stricter, precision-oriented signal.</p>
+
+            <h2>Antithesis: learn the reward instead</h2>
+            <p class="mt-4">Around the same time, preference reward modelling matured with <a class="ref" href="https://arxiv.org/abs/2203.02155" target="_blank" rel="noopener noreferrer">InstructGPT</a>. Instead of listing rewards, you learn one. People struggle to give a summary a score out of ten, but they can easily say which of two summaries is better. That single choice reflects every property at once, including the implicit ones nobody writes down: don&rsquo;t make things up, don&rsquo;t be mean. Preference is one reward to rule them all.</p>
+            <p class="mt-4">The <a class="ref" href="https://doi.org/10.2307/2334029" target="_blank" rel="noopener noreferrer">Bradley&ndash;Terry model</a> turns comparisons into a hidden score. If \(r\) is the reward, the probability that summary \(A\) is preferred over \(B\) is</p>
+            <div class="my-4 text-center overflow-x-auto">\[ P(A \succ B) = \sigma\big(r(A) - r(B)\big) = \frac{1}{1 + e^{-(r(A) - r(B))}} \]</div>
+            <p>Training a reward model means finding the \(r\) under which the preferences people actually gave are most likely.</p>
+
+            <div class="demo my-8" id="bt-demo">
+                <p class="text-sm text-gray-600 dark:text-gray-400"><span class="added-label">Interactive</span> Only the gap between two rewards matters. Move it and watch the chance that a person prefers \(A\).</p>
+                <div class="plot mt-4" id="plot-bt" role="img" aria-label="Probability that A is preferred, against the reward gap"><div class="tip" hidden></div></div>
+                <div class="ctl mt-4">
+                    <label for="gap">\(r(A) - r(B)\)</label>
+                    <input type="range" id="gap" min="-6" max="6" step="0.1" value="1">
+                    <output id="gap-out"></output>
+                </div>
+                <p class="mt-3 text-sm text-gray-700 dark:text-gray-300" id="bt-read"></p>
+            </div>
+
+            <p>It worked remarkably well. InstructGPT&rsquo;s 1.3B model was preferred over the 175B GPT-3, with about a hundredth of the parameters.</p>
+
+            <h2>The catch</h2>
+            <p class="mt-4">Preferences are subjective, and they depend on the task. A made-up detail is welcome in creative writing and a failure in summarization. So a general-purpose reward model may not serve a specific task, and a specific task needs its own preference data, usually tens of thousands of pairs. For most tasks, that is too expensive.</p>
+
+            <h2>Synthesis: decompose the reward</h2>
+            <p class="mt-4">So we combined the two ideas, and split the reward model into two stages.</p>
+            <ol class="steps mt-4 space-y-3">
+                <li><span>Domain experts name the features that matter. For e-commerce opinion summaries: aspect coverage, opinion faithfulness, opinion coverage, conciseness, relevance, hallucination and language correctness. An LLM, Mistral-7B, scores each summary on each feature. This stage needs no training data.</span></li>
+                <li><span>A small feed-forward network learns from human preferences how to combine those scores into one reward.</span></li>
+            </ol>
+            <p class="mt-4">The features compress most of the variation in the data, so the second stage has much less to learn.</p>
+            <figure class="figure my-6">
+                <img src="../efficient-rlhf/teaser.png" alt="Usual reward modelling trains a large model on preference pairs; ours first maps each summary to feature scores, then trains a small network on them." loading="lazy" class="w-full">
+                <figcaption>Top: the usual approach trains a large reward model directly on preference pairs. Bottom: ours maps each summary to feature values first, then fits a small network on them.</figcaption>
+            </figure>
+            <p>In <a class="ref" href="../efficient-rlhf/index.html">our paper on efficient reward modelling</a>, this needed just 940 preference pairs, a 21&times; reduction. The resulting policy advanced the state of the art by about 4 ROUGE-L points, human evaluators preferred it over the previous best 68% of the time, and it avoided the alignment tax. The features also make the reward readable: hallucination and opinion faithfulness turned out to carry the most weight.</p>
+
+            <div class="demo my-8" id="sim-demo">
+                <p class="text-sm text-gray-600 dark:text-gray-400"><span class="added-label">Interactive</span> A toy version of the argument, not the paper&rsquo;s experiment. Synthetic summaries have 7 hidden quality features; preferences are drawn from a Bradley&ndash;Terry model. One reward model sees the 7 features. The other sees a 128-dimensional raw representation in which quality is mixed with variation unrelated to it, such as topic or style. Both are trained in your browser.</p>
+                <div class="legend mt-4">
+                    <span><i class="sw-line" style="border-color: var(--accent)"></i>From 7 expert features</span>
+                    <span><i class="sw-line" style="border-color: var(--series-2); border-top-style: dashed"></i>From the raw representation</span>
+                </div>
+                <div class="plot mt-3" id="plot-sim" role="img" aria-label="Held-out preference accuracy against the number of preference pairs"><div class="tip" hidden></div></div>
+                <div class="ctl mt-4">
+                    <label for="nuis">Variation unrelated to quality</label>
+                    <input type="range" id="nuis" min="0" max="3" step="0.5" value="2">
+                    <output id="nuis-out"></output>
+                </div>
+                <div class="mt-3 flex flex-wrap items-center gap-3">
+                    <button type="button" class="btn-sm" id="rerun">Re-run with new data</button>
+                    <span class="demo-note" id="sim-status"></span>
+                </div>
+                <details class="mt-4 text-sm">
+                    <summary class="cursor-pointer accent">Show values as a table</summary>
+                    <div class="mt-3 overflow-x-auto"><table class="results" id="sim-table"></table></div>
+                </details>
+                <p class="demo-note mt-4">Accuracy is agreement with the true preference on 1,500 held-out pairs, averaged over three runs. Each reward model is a Bradley&ndash;Terry logistic regression. With little unrelated variation, the two start close. The more there is, the further behind the raw model falls when pairs are few: the features help because they throw away what does not matter.</p>
+            </div>
+
+            <h2>Who scores the features?</h2>
+            <p class="mt-4">The first stage leans on an LLM to judge summaries, which raises the obvious question: can LLMs judge summaries at all? In <a class="ref" href="../one-prompt/index.html">our ACL 2024 paper on opinion summary evaluation</a>, a single prompt, Op-I-Prompt, in which only the metric definition changes between dimensions, reached an average Spearman correlation of 0.70 with human judgments across seven dimensions, ahead of earlier methods. LLM judges are not people, but they are a promising source of feedback where people are too slow or too expensive.</p>
+
+            <h2>Where this leaves me</h2>
+            <p class="mt-4">My takeaway from the thesis: task-specific reward modelling is a cost- and time-efficient way to use RL for text generation, and it brings RLHF to tasks where preference data is scarce. A few questions I am leaving with:</p>
+            <ul class="mt-3 space-y-2 pl-5 list-disc marker:text-gray-400">
+                <li>Does the decomposition carry over from opinion summarization to other generation tasks?</li>
+                <li>Newer methods such as <a class="ref" href="https://arxiv.org/abs/2305.18290" target="_blank" rel="noopener noreferrer">DPO</a> and <a class="ref" href="https://arxiv.org/abs/2308.08998" target="_blank" rel="noopener noreferrer">ReST</a> change the algorithm rather than the reward, and DPO skips the reward model entirely. In our opinion-summarization experiments, DPO on the same data trailed the decomposed reward (ROUGE-L 15.03 against 19.23 on Amazon-R). How the two ideas combine is open.</li>
+                <li>Can feedback from LLMs replace part of the human preference data that is still needed?</li>
+            </ul>
+
+            <section id="sources" class="mt-14 scroll-mt-20">
+                <h2 class="section-title" style="margin-top: 0; font-size: 0.875rem;">Sources</h2>
+                <div class="mt-4 text-sm leading-relaxed space-y-4">
+                    <div>
+                        <p class="font-semibold text-gray-900 dark:text-white">My papers</p>
+                        <ul class="mt-1.5 space-y-1">
+                            <li><a class="ref" href="../rl-qfs/index.html">Reinforcement Replaces Supervision: Query focused Summarization using Deep Reinforcement Learning</a> &middot; EMNLP 2023</li>
+                            <li><a class="ref" href="../efficient-rlhf/index.html">Leveraging Domain Knowledge for Efficient Reward Modelling in RLHF</a> &middot; arXiv 2024</li>
+                            <li><a class="ref" href="../one-prompt/index.html">One Prompt To Rule Them All: LLMs for Opinion Summary Evaluation</a> &middot; ACL 2024</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <p class="font-semibold text-gray-900 dark:text-white">My talks</p>
+                        <ul class="mt-1.5 space-y-1">
+                            <li><a class="ref" href="https://docs.google.com/presentation/d/1sC9XGtM98e-X7dEqXtD0h5qW_rCZy13KVcmbscOfp-A/edit" target="_blank" rel="noopener noreferrer">Alignment, Preference Modelling, RLHF</a> &middot; course module for Qualcomm engineers</li>
+                            <li><a class="ref" href="https://docs.google.com/presentation/d/19lC6NVcZBVYRKEEaOyZMR_SEohnTnRghG_b-CodPHZQ/edit" target="_blank" rel="noopener noreferrer">Reinforcement Learning in Natural Language Generation</a> &middot; lecture, IIT Bombay</li>
+                            <li><a class="ref" href="https://docs.google.com/presentation/d/1pzHrpbQr0nxIe2jDH6YIt3D6J0Nh9K66GUdBlhEBTQU/edit" target="_blank" rel="noopener noreferrer">Leveraging Domain Knowledge for Efficient Reward Modelling in RLHF</a> &middot; RISC 2024</li>
+                            <li><a class="ref" href="https://docs.google.com/presentation/d/1wWe9U0C77oNwKWMWcKSMZNLKgcrDanvazhbMhd_kLP4/edit" target="_blank" rel="noopener noreferrer">Task-Aligned Reward Modeling for Reinforcement Learning in Text Summarization</a> &middot; my MS thesis work</li>
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </article>
+    </main>
+
+    <script>
+        const $ = s => document.querySelector(s);
+        const css = n => window.cssVar(n);
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+        /* ---------- Metrics (same implementation as the rl-qfs project page) ---------- */
+        const words = t => (t.match(/[A-Za-z0-9]+/g) || []).map(w => w.toLowerCase());
+        function lcsLen(a, b) {
+            const dp = Array.from({ length: a.length + 1 }, () => new Uint16Array(b.length + 1));
+            for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+                dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+            return dp[a.length][b.length];
+        }
+        function rougeL(ref, cand) {
+            const l = lcsLen(ref, cand);
+            if (!ref.length || !cand.length || !l) return 0;
+            const p = l / cand.length, r = l / ref.length;
+            return 2 * p * r / (p + r);
+        }
+        function ngramCounts(t, n) {
+            const c = new Map();
+            for (let i = 0; i + n <= t.length; i++) { const k = t.slice(i, i + n).join('\u0001'); c.set(k, (c.get(k) || 0) + 1); }
+            return c;
+        }
+        function bleu(ref, cand, maxN) {
+            if (!cand.length || !ref.length) return 0;
+            let logSum = 0;
+            for (let n = 1; n <= maxN; n++) {
+                const c = ngramCounts(cand, n), r = ngramCounts(ref, n);
+                let total = 0, clipped = 0;
+                c.forEach((count, k) => { total += count; clipped += Math.min(count, r.get(k) || 0); });
+                if (!total || !clipped) return 0;
+                logSum += Math.log(clipped / total);
+            }
+            const bp = cand.length > ref.length ? 1 : Math.exp(1 - ref.length / cand.length);
+            return bp * Math.exp(logSum / maxN);
+        }
+        const bleuMean = (ref, cand) => [1, 2, 3, 4].reduce((s, n) => s + bleu(ref, cand, n), 0) / 4;
+        function tokenMatch(ref, cand) {
+            if (!ref.length) return 0;
+            let hits = 0;
+            for (let t = 0; t < Math.min(ref.length, cand.length); t++) if (ref[t] === cand[t]) hits++;
+            return hits / ref.length;
+        }
+
+        /* ---------- Demo 1: paraphrases ---------- */
+        const REF = words($('#ref-text').textContent);
+        const PRESETS = [
+            'The swift brown fox leaps over the sleepy dog.',
+            'The agile brown fox leaps across the sluggish dog.',
+            'Look, the quick brown fox jumps over the lazy dog.',
+            'The lazy brown dog jumps over the quick fox.',
+        ];
+        const cand = $('#cand');
+        function scorePara() {
+            const c = words(cand.value);
+            const rows = [
+                ['Token match', 'maximum likelihood', tokenMatch(REF, c)],
+                ['ROUGE-L', 'lexical reward', rougeL(REF, c)],
+                ['BLEU', 'lexical reward', bleuMean(REF, c)],
+            ];
+            $('#metrics').innerHTML = rows.map(([n, s, v]) =>
+                `<div class="mrow"><span class="name">${n}<small>${s}</small></span><span class="bar" role="meter" aria-valuemin="0" aria-valuemax="1" aria-valuenow="${v.toFixed(2)}" aria-label="${n}"><i style="width:${(v * 100).toFixed(1)}%"></i></span><span class="val">${v.toFixed(2)}</span></div>`).join('');
+            document.querySelectorAll('[data-preset]').forEach(b => b.setAttribute('aria-pressed', String(cand.value === PRESETS[+b.dataset.preset])));
+        }
+        document.querySelectorAll('[data-preset]').forEach(b => b.addEventListener('click', () => { cand.value = PRESETS[+b.dataset.preset]; scorePara(); }));
+        cand.addEventListener('input', scorePara);
+        cand.value = PRESETS[0];
+
+        /* ---------- Small chart helper ---------- */
+        function setupHover(host, onMove, onLeave) {
+            const tip = host.querySelector('.tip');
+            host.addEventListener('pointermove', e => {
+                if (e.pointerType === 'touch') return;
+                const r = host.getBoundingClientRect();
+                const html = onMove(e.clientX - r.left, e.clientY - r.top);
+                if (!html) { tip.hidden = true; onLeave(); return; }
+                tip.innerHTML = html; tip.hidden = false;
+                const px = e.clientX - r.left, py = e.clientY - r.top;
+                tip.style.left = clamp(px + 12, 0, host.clientWidth - tip.offsetWidth) + 'px';
+                tip.style.top = clamp(py - tip.offsetHeight - 10, 0, host.clientHeight - tip.offsetHeight) + 'px';
+            });
+            host.addEventListener('pointerleave', () => { tip.hidden = true; onLeave(); });
+        }
+        function drawSvg(host, W, H, body) {
+            const old = host.querySelector('svg'); if (old) old.remove();
+            host.insertAdjacentHTML('afterbegin', `<svg width="${W}" height="${H}" font-family="DM Sans, system-ui, sans-serif">${body}</svg>`);
+        }
+        const sig = x => 1 / (1 + Math.exp(-x));
+
+        /* ---------- Demo 2: Bradley-Terry ---------- */
+        const bt = { gap: 1, hover: null };
+        function renderBT() {
+            const host = $('#plot-bt');
+            const W = host.clientWidth, H = W < 480 ? 180 : 200, m = { l: 34, r: 12, t: 14, b: 34 };
+            const x = v => m.l + (v + 6) / 12 * (W - m.l - m.r), y = v => H - m.b - v * (H - m.t - m.b);
+            let g = '';
+            [0, 0.5, 1].forEach(v => {
+                g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--line')}"/>`
+                    + `<text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${css('--muted')}">${v}</text>`;
+            });
+            [-6, -3, 0, 3, 6].forEach(t => { g += `<text x="${x(t)}" y="${H - m.b + 16}" text-anchor="middle" font-size="11" fill="${css('--muted')}">${t < 0 ? '−' + -t : t}</text>`; });
+            g += `<text x="${W - m.r}" y="${H - m.b + 30}" text-anchor="end" font-size="11" fill="${css('--muted')}">r(A) − r(B)</text>`;
+            let d = '';
+            for (let v = -6; v <= 6.0001; v += 0.1) d += (d ? 'L' : 'M') + x(v).toFixed(1) + ',' + y(sig(v)).toFixed(1);
+            g += `<path d="${d}" fill="none" stroke="${css('--accent')}" stroke-width="2"/>`;
+            if (bt.hover !== null) g += `<line x1="${x(bt.hover)}" x2="${x(bt.hover)}" y1="${m.t}" y2="${H - m.b}" stroke="${css('--faint')}" stroke-dasharray="2 3"/>`;
+            const X = x(bt.gap), Y = y(sig(bt.gap));
+            g += `<line x1="${X}" x2="${X}" y1="${Y}" y2="${H - m.b}" stroke="${css('--fg-strong')}" stroke-width="1.5" stroke-dasharray="3 3"/>`
+                + `<circle cx="${X}" cy="${Y}" r="5" fill="${css('--accent')}" stroke="${css('--surface')}" stroke-width="2"/>`;
+            drawSvg(host, W, H, g);
+            host._x = { m, W, inv: px => -6 + (px - m.l) / (W - m.l - m.r) * 12 };
+            const p = sig(bt.gap);
+            $('#gap-out').textContent = (bt.gap > 0 ? '+' : bt.gap < 0 ? '−' : '') + Math.abs(bt.gap).toFixed(1);
+            $('#bt-read').innerHTML = `People prefer \\(A\\) about <b class="text-gray-900 dark:text-white">${Math.round(p * 100)}%</b> of the time` + (Math.abs(bt.gap) < 0.05 ? ': a coin flip.' : '.');
+            if (window.renderMathInElement) renderMathInElement($('#bt-read'), { delimiters: [{ left: '\\(', right: '\\)', display: false }] });
+        }
+        setupHover($('#plot-bt'), px => {
+            const s = $('#plot-bt')._x; if (!s) return null;
+            const v = s.inv(px); if (v < -6 || v > 6) return null;
+            bt.hover = v; renderBT();
+            return `<b>gap ${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}</b><br>P(A ≻ B) = ${sig(v).toFixed(2)}`;
+        }, () => { bt.hover = null; renderBT(); });
+        $('#gap').addEventListener('input', e => { bt.gap = +e.target.value; renderBT(); });
+
+        /* ---------- Demo 3: toy simulation ---------- */
+        // Synthetic world: 7 quality features v; reward r = w·v. The raw representation
+        // mixes v with U nuisance factors u (topic, style...) that do not affect r:
+        // x = A v + B u + noise. Preferences ~ Bradley-Terry on r.
+        const K = 7, D = 128, U = 48, NS = [25, 50, 100, 200, 400, 800, 1600], SEEDS = 3, NTEST = 1500;
+        const W_TRUE = [1.4, 1.0, 0.8, 0.6, 0.5, 0.4, 0.3];
+        function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ t >>> 15, t | 1); t ^= t + Math.imul(t ^ t >>> 7, t | 61); return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+        function gauss(r) { let u = 0; while (!u) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+        function world(seed, us) {
+            const r = rng(seed);
+            const A = Array.from({ length: D }, () => Array.from({ length: K }, () => gauss(r) / Math.sqrt(K)));
+            const B = Array.from({ length: D }, () => Array.from({ length: U }, () => gauss(r) / Math.sqrt(U)));
+            const sample = () => {
+                const v = Array.from({ length: K }, () => gauss(r)), u = Array.from({ length: U }, () => us * gauss(r));
+                const x = A.map((row, d) => row.reduce((a, b, i) => a + b * v[i], 0) + B[d].reduce((a, b, i) => a + b * u[i], 0) + 0.5 * gauss(r));
+                return { v, x, rw: v.reduce((a, b, i) => a + b * W_TRUE[i], 0) };
+            };
+            const pair = () => {
+                const a = sample(), b = sample();
+                return { f: a.v.map((x, i) => x - b.v[i]), raw: a.x.map((x, i) => x - b.x[i]), y: r() < sig(a.rw - b.rw) ? 1 : 0, truth: a.rw > b.rw ? 1 : 0 };
+            };
+            return { pair };
+        }
+        // Bradley-Terry reward model: logistic regression on feature differences, Adam
+        function train(X, y, lam, iters) {
+            const d = X[0].length, n = X.length, w = new Float64Array(d), m1 = new Float64Array(d), m2 = new Float64Array(d), g = new Float64Array(d);
+            for (let t = 1; t <= iters; t++) {
+                g.fill(0);
+                for (let i = 0; i < n; i++) { const xi = X[i]; let z = 0; for (let j = 0; j < d; j++) z += w[j] * xi[j]; const e = sig(z) - y[i]; for (let j = 0; j < d; j++) g[j] += e * xi[j]; }
+                for (let j = 0; j < d; j++) {
+                    const gj = g[j] / n + lam * w[j];
+                    m1[j] = 0.9 * m1[j] + 0.1 * gj; m2[j] = 0.999 * m2[j] + 0.001 * gj * gj;
+                    w[j] -= 0.05 * (m1[j] / (1 - 0.9 ** t)) / (Math.sqrt(m2[j] / (1 - 0.999 ** t)) + 1e-8);
+                }
+            }
+            return w;
+        }
+        const accuracy = (w, X, t) => { let ok = 0; X.forEach((x, i) => { let z = 0; for (let j = 0; j < x.length; j++) z += x[j] * w[j]; if ((z > 0 ? 1 : 0) === t[i]) ok++; }); return ok / X.length; };
+
+        const sim = { us: 2, seedBase: 1, results: null, hover: null, job: 0 };
+        function runSim() {
+            const job = ++sim.job;
+            const feat = NS.map(() => 0), raw = NS.map(() => 0);
+            const tasks = [];
+            for (let s = 0; s < SEEDS; s++) tasks.push(s);
+            $('#sim-status').textContent = 'Training…';
+            let s = 0;
+            const step = () => {
+                if (job !== sim.job) return;
+                const W = world(sim.seedBase * 101 + s * 7 + Math.round(sim.us * 10), sim.us);
+                const test = Array.from({ length: NTEST }, W.pair);
+                const pool = Array.from({ length: NS[NS.length - 1] }, W.pair);
+                const Tf = test.map(p => p.f), Tr = test.map(p => p.raw), Tt = test.map(p => p.truth);
+                NS.forEach((n, k) => {
+                    const tr = pool.slice(0, n), y = tr.map(p => p.y);
+                    feat[k] += accuracy(train(tr.map(p => p.f), y, 1e-3, 250), Tf, Tt) / SEEDS;
+                    raw[k] += accuracy(train(tr.map(p => p.raw), y, 3e-2, 400), Tr, Tt) / SEEDS;
+                });
+                s++;
+                if (s < SEEDS) { $('#sim-status').textContent = `Training… run ${s + 1} of ${SEEDS}`; setTimeout(step, 0); }
+                else { sim.results = { feat, raw }; $('#sim-status').textContent = ''; renderSim(); renderSimTable(); }
+            };
+            setTimeout(step, 30);
+        }
+        function renderSim() {
+            const host = $('#plot-sim');
+            const W = host.clientWidth, H = W < 480 ? 210 : 240, m = { l: 40, r: W < 480 ? 12 : 104, t: 14, b: 36 };
+            const lx = n => Math.log(n), x0 = lx(NS[0]), x1 = lx(NS[NS.length - 1]);
+            const x = n => m.l + (lx(n) - x0) / (x1 - x0) * (W - m.l - m.r), y = v => H - m.b - (v - 0.5) / 0.5 * (H - m.t - m.b);
+            let g = '';
+            [0.5, 0.75, 1].forEach(v => {
+                g += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--line')}"/>`
+                    + `<text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${css('--muted')}">${Math.round(v * 100)}%</text>`;
+            });
+            NS.forEach(n => { g += `<text x="${x(n)}" y="${H - m.b + 16}" text-anchor="middle" font-size="11" fill="${css('--muted')}">${n >= 1000 ? (n / 1000).toFixed(1) + 'k' : n}</text>`; });
+            g += `<text x="${W - m.r}" y="${H - m.b + 30}" text-anchor="end" font-size="11" fill="${css('--muted')}">preference pairs (log scale)</text>`;
+            if (sim.results) {
+                const line = (arr, color, dash) => `<path d="${arr.map((v, k) => (k ? 'L' : 'M') + x(NS[k]).toFixed(1) + ',' + y(v).toFixed(1)).join('')}" fill="none" stroke="${color}" stroke-width="2" ${dash ? 'stroke-dasharray="6 4"' : ''}/>`
+                    + arr.map((v, k) => `<circle cx="${x(NS[k])}" cy="${y(v)}" r="${sim.hover === k ? 5 : 3.5}" fill="${color}" stroke="${css('--surface')}" stroke-width="1.5"/>`).join('');
+                g += line(sim.results.raw, css('--series-2'), true) + line(sim.results.feat, css('--accent'), false);
+                if (sim.hover !== null) g += `<line x1="${x(NS[sim.hover])}" x2="${x(NS[sim.hover])}" y1="${m.t}" y2="${H - m.b}" stroke="${css('--faint')}" stroke-dasharray="2 3"/>`;
+                if (W >= 480) {
+                    const L = NS.length - 1, yf = y(sim.results.feat[L]), yr = y(sim.results.raw[L]);
+                    const gap = Math.abs(yf - yr) < 26 ? (26 - Math.abs(yf - yr)) / 2 : 0, up = yf <= yr ? -1 : 1;
+                    g += `<text x="${x(NS[L]) + 10}" y="${yf + 4 + up * gap}" font-size="11" fill="${css('--fg')}">7 features</text>`
+                        + `<text x="${x(NS[L]) + 10}" y="${yr + 4 - up * gap}" font-size="11" fill="${css('--fg')}">raw (128-d)</text>`;
+                }
+            } else {
+                g += `<text x="${(m.l + W - m.r) / 2}" y="${H / 2}" text-anchor="middle" font-size="12" fill="${css('--muted')}">Training…</text>`;
+            }
+            drawSvg(host, W, H, g);
+            host._x = { x };
+            $('#nuis-out').textContent = sim.us === 0 ? 'none' : sim.us.toFixed(1) + '×';
+        }
+        function renderSimTable() {
+            if (!sim.results) return;
+            $('#sim-table').innerHTML = '<thead><tr><th class="num">Pairs</th><th class="num">7 features</th><th class="num">Raw (128-d)</th></tr></thead><tbody>'
+                + NS.map((n, k) => `<tr><td class="num">${n.toLocaleString('en-US')}</td><td class="num">${(sim.results.feat[k] * 100).toFixed(1)}%</td><td class="num">${(sim.results.raw[k] * 100).toFixed(1)}%</td></tr>`).join('') + '</tbody>';
+        }
+        setupHover($('#plot-sim'), px => {
+            const s = $('#plot-sim')._x; if (!s || !sim.results) return null;
+            let best = 0; NS.forEach((n, k) => { if (Math.abs(s.x(n) - px) < Math.abs(s.x(NS[best]) - px)) best = k; });
+            if (Math.abs(s.x(NS[best]) - px) > 40) return null;
+            sim.hover = best; renderSim();
+            return `<b>${NS[best].toLocaleString('en-US')} pairs</b><br>7 features: ${(sim.results.feat[best] * 100).toFixed(1)}%<br>Raw: ${(sim.results.raw[best] * 100).toFixed(1)}%`;
+        }, () => { sim.hover = null; renderSim(); });
+        let nt;
+        $('#nuis').addEventListener('input', e => { sim.us = +e.target.value; sim.results = null; renderSim(); clearTimeout(nt); nt = setTimeout(runSim, 150); });
+        $('#rerun').addEventListener('click', () => { sim.seedBase++; sim.results = null; renderSim(); runSim(); });
+
+        /* ---------- Boot ---------- */
+        function renderAll() { renderBT(); renderSim(); }
+        document.addEventListener('themechange', renderAll);
+        let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderAll, 80); });
+        document.addEventListener('DOMContentLoaded', () => {
+            renderMathInElement(document.querySelector('main'), {
+                delimiters: [{ left: '\\[', right: '\\]', display: true }, { left: '\\(', right: '\\)', display: false }],
+                throwOnError: false,
+            });
+            scorePara(); renderAll(); runSim();
+        });
+    </script>
+</body>
+</html>
