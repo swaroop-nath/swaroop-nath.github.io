@@ -85,7 +85,7 @@
         </a>
         <h1 class="mt-4 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">Talks</h1>
         <p class="mt-3 leading-relaxed text-gray-600 dark:text-gray-400">
-            Talks and lectures from my time at IIT Bombay and after, mostly on reinforcement learning for language generation, RLHF and reward modelling, and text summarization. Each one links to its slides.
+            Talks and lectures on reinforcement learning for language generation, RLHF and text summarization.
         </p>
 
         <div class="mt-12 space-y-14">
@@ -99,7 +99,7 @@
                             <h3 class="font-semibold text-gray-900 dark:text-white leading-snug">Task-Aligned Reward Modeling for Reinforcement Learning in Text Summarization</h3>
                             <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Industry talk &middot; Hyperbots</p>
                             <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300 mt-2">
-                                Supervised training rewards a summary only for matching one reference, even though the same content can be written many ways. Reinforcement learning lets us optimise any reward instead, which raises the real question: which reward? This talk argues that the properties of the task itself should define the rewards, and shows it for two settings &mdash; query-focused summarization and opinion summarization.
+                                Designing RL rewards from the properties of the summarization task, shown for query-focused and opinion summarization.
                             </p>
                             <p class="text-sm mt-2.5 text-gray-500 dark:text-gray-500">
                                 <a href="https://docs.google.com/presentation/d/1wWe9U0C77oNwKWMWcKSMZNLKgcrDanvazhbMhd_kLP4/edit" target="_blank" rel="noopener noreferrer" class="accent">Slides</a>
@@ -115,7 +115,7 @@
                                 <span class="award"><i class="fas fa-trophy"></i> Best Talk Award</span>
                             </p>
                             <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300 mt-2">
-                                Reward models for RLHF usually need large amounts of human-preference data. Domain experts can instead name the features that make an output good, and those features compress much of the variation in the data. For e-commerce opinion summarization, seven such features let us train the reward model on just 940 preference pairs &mdash; a more than 20&times; reduction &mdash; while improving summary quality.
+                                Using domain knowledge to train RLHF reward models with over 20&times; less human-preference data.
                             </p>
                             <p class="text-sm mt-2.5 text-gray-500 dark:text-gray-500">
                                 <a href="https://docs.google.com/presentation/d/1pzHrpbQr0nxIe2jDH6YIt3D6J0Nh9K66GUdBlhEBTQU/edit" target="_blank" rel="noopener noreferrer" class="accent">Slides</a>
@@ -136,7 +136,7 @@
                             <h3 class="font-semibold text-gray-900 dark:text-white leading-snug">Cut to the Chase, Please: Summarizing Textual Data</h3>
                             <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Lecture to IIT Bombay students, with the Summarization Team at CFILT Lab</p>
                             <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300 mt-2">
-                                A tour of text summarization: why it matters as digital text keeps growing, and its two goals of coverage and conciseness. It moves from statistical and neural extractive methods to abstractive sequence-to-sequence models, attention, PEGASUS pre-training and pointer-generator networks, then covers evaluation with ROUGE and reinforcement learning for query-focused and opinion summarization.
+                                An overview of text summarization: extractive and abstractive methods, evaluation, and RL-based approaches.
                             </p>
                             <p class="text-sm mt-2.5 text-gray-500 dark:text-gray-500">
                                 <a href="https://docs.google.com/presentation/d/1RgVubkxyvAXKxL2Y-LCHXlWqUPMC_LZy2ylMjzM0EUg/edit" target="_blank" rel="noopener noreferrer" class="accent">Slides</a>
@@ -149,7 +149,7 @@
                             <h3 class="font-semibold text-gray-900 dark:text-white leading-snug">Reinforcement Learning in Natural Language Generation</h3>
                             <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Lecture to IIT Bombay students</p>
                             <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300 mt-2">
-                                Why generation needs more than token-by-token matching: what makes text good, and why humans act as the oracle. It covers preference modelling and the Bradley&ndash;Terry model, the InstructGPT recipe of supervised fine-tuning followed by RLHF, and how domain knowledge can cut down the preference data a reward model needs.
+                                Why RL suits text generation, with preference modelling and RLHF.
                             </p>
                             <p class="text-sm mt-2.5 text-gray-500 dark:text-gray-500">
                                 <a href="https://docs.google.com/presentation/d/19lC6NVcZBVYRKEEaOyZMR_SEohnTnRghG_b-CodPHZQ/edit" target="_blank" rel="noopener noreferrer" class="accent">Slides</a>
@@ -160,17 +160,14 @@
             </section>
 
             <section id="qualcomm" class="scroll-mt-20">
-                <h2 class="section-title text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-800">Course Modules &middot; Advanced NLP for Qualcomm</h2>
-                <p class="mt-4 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
-                    Learning modules I delivered to Qualcomm engineers as part of a course on Advanced Natural Language Processing.
-                </p>
+                <h2 class="section-title text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-800">Course Modules &middot; Course on NLP to Qualcomm Engineers</h2>
                 <ul class="mt-5 divide-y divide-gray-200 dark:divide-gray-800">
                     <li class="py-5 first:pt-0 flex flex-col sm:flex-row sm:gap-5">
                         <span class="text-sm text-gray-400 dark:text-gray-500 sm:w-28 sm:shrink-0 sm:text-right sm:pt-0.5">September 2023</span>
                         <div>
                             <h3 class="font-semibold text-gray-900 dark:text-white leading-snug">Alignment, Preference Modelling, RLHF</h3>
                             <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300 mt-2">
-                                Why maximum likelihood teaches only an input-to-output mapping, and what it takes to capture the implicit intent behind a request. It goes from instruction tuning to preference modelling and the REINFORCE trick, walks through InstructGPT and Sparrow, and closes with newer directions such as DPO and ReST.
+                                An introduction to alignment: instruction tuning, preference modelling and RLHF.
                             </p>
                             <p class="text-sm mt-2.5 text-gray-500 dark:text-gray-500">
                                 <a href="https://docs.google.com/presentation/d/1sC9XGtM98e-X7dEqXtD0h5qW_rCZy13KVcmbscOfp-A/edit" target="_blank" rel="noopener noreferrer" class="accent">Slides</a>
@@ -182,7 +179,7 @@
                         <div>
                             <h3 class="font-semibold text-gray-900 dark:text-white leading-snug">Tips and Tricks for LLM Training</h3>
                             <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300 mt-2">
-                                Practical lessons from pre-training a language model on about 850,000 sentences: larger batches help, learning-rate warmup works best at roughly a fifth of training, and cleaning the data reduces gradient noise. It pairs these with findings from scaling-law research on how model size, data and compute trade off.
+                                Practical lessons from pre-training a language model, alongside findings from scaling-law research.
                             </p>
                             <p class="text-sm mt-2.5 text-gray-500 dark:text-gray-500">
                                 <a href="https://docs.google.com/presentation/d/1lOcw5uNyAoF1vqD01bCbt14UV1EL27Mop8y72jJQ1dI/edit" target="_blank" rel="noopener noreferrer" class="accent">Slides</a>
