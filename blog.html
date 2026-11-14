@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog &middot; Swaroop Nath</title>
+    <meta name="description" content="Blog posts by Swaroop Nath.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['DM Sans', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'],
+                    },
+                },
+            },
+        }
+    </script>
+    <style>
+        /* Same accent and section treatment as the home page */
+        :root { --accent: #a37d0b; }
+        html.dark { --accent: #d9b04a; }
+        .accent { color: var(--accent); }
+        .accent:hover { text-decoration: underline; }
+
+        body, header, h1, h2, h3, p, a, button {
+            transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+        }
+
+        .section-title {
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid;
+        }
+
+        /* Small outlined label for an award, quieter than a button */
+        .award {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.375rem;
+            padding: 0.125rem 0.5rem;
+            border: 1px solid var(--accent);
+            border-radius: 9999px;
+            color: var(--accent);
+            font-size: 0.75rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-200">
+
+    <header class="bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+        <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <div>
+                <a href="index.html" class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">Swaroop Nath</a>
+            </div>
+            <div class="flex items-center space-x-6">
+                 <div class="hidden sm:flex items-center space-x-5 text-sm text-gray-500 dark:text-gray-400">
+                    <a href="index.html#about" class="hover:text-gray-900 dark:hover:text-white">About</a>
+                    <a href="index.html#schedule" class="hover:text-gray-900 dark:hover:text-white">Schedule</a>
+                    <a href="index.html#news" class="hover:text-gray-900 dark:hover:text-white">News</a>
+                    <a href="index.html#publications" class="hover:text-gray-900 dark:hover:text-white">Publications</a>
+                    <a href="talks.html" class="hover:text-gray-900 dark:hover:text-white">Talks</a>
+                    <a href="blog.html" aria-current="page" class="text-gray-900 dark:text-white">Blog</a>
+                </div>
+                <button id="theme-toggle-main" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400">
+                    <span id="theme-icon-container">
+                        <i data-lucide="moon" class="h-5 w-5"></i>
+                    </span>
+                    <span class="sr-only">Toggle theme</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <a href="index.html" class="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+            <i data-lucide="arrow-left" class="h-4 w-4"></i> Home
+        </a>
+        <h1 class="mt-4 text-3xl font-semibold tracking-tight text-gray-900 dark:text-white">Blog</h1>
+        <p class="mt-3 leading-relaxed text-gray-600 dark:text-gray-400">
+            Short write-ups on machine learning.
+        </p>
+
+        <div class="mt-12 space-y-14">
+
+            <section id="posts" class="scroll-mt-20">
+                <h2 class="section-title text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-800">Posts</h2>
+                <ul class="mt-5 divide-y divide-gray-200 dark:divide-gray-800">
+                    <li class="py-5 first:pt-0 flex flex-col sm:flex-row sm:gap-5">
+                        <span class="text-sm text-gray-400 dark:text-gray-500 sm:w-28 sm:shrink-0 sm:text-right sm:pt-0.5">August 2023</span>
+                        <div>
+                            <h3 class="font-semibold text-gray-900 dark:text-white leading-snug"><a href="blog/precision-recall-relationship.html" class="text-gray-900 dark:text-white hover:underline">Precision-Recall Relationship</a></h3>
+                            <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Interactive edition, generated by Claude from the original post</p>
+                            <p class="text-sm leading-relaxed text-gray-700 dark:text-gray-300 mt-2">
+                                Why precision and recall move in opposite directions as a classifier&rsquo;s decision threshold changes.
+                            </p>
+                            <p class="text-sm mt-2.5 text-gray-500 dark:text-gray-500">
+                                <a href="blog/precision-recall-relationship.html" class="accent">Read</a>
+                                <span class="mx-2 text-gray-300 dark:text-gray-700">&middot;</span>
+                                <a href="https://www.cse.iitb.ac.in/~swaroopnath/precision_recall_relationship.pdf" target="_blank" rel="noopener noreferrer" class="accent">Original (PDF)</a>
+                            </p>
+                        </div>
+                    </li>
+                </ul>
+            </section>
+
+        </div>
+    </main>
+
+    <script>
+        // --- THEME TOGGLER SCRIPT (same behaviour as the home page) ---
+        const themeToggleButton = document.getElementById('theme-toggle-main');
+        const themeIconContainer = document.getElementById('theme-icon-container');
+
+        const updateThemeButton = (isDark) => {
+            const iconName = isDark ? 'sun' : 'moon';
+            const title = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+
+            themeToggleButton.setAttribute('title', title);
+            themeIconContainer.innerHTML = `<i data-lucide="${iconName}" class="h-5 w-5"></i>`;
+            lucide.createIcons();
+        }
+
+        const applyTheme = (isDark) => {
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+            updateThemeButton(isDark);
+        };
+
+        themeToggleButton.addEventListener('click', () => {
+            const isCurrentlyDark = document.documentElement.classList.contains('dark');
+            const newThemeIsDark = !isCurrentlyDark;
+            localStorage.setItem('color-theme', newThemeIsDark ? 'dark' : 'light');
+            applyTheme(newThemeIsDark);
+        });
+
+        const initializeTheme = () => {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const savedTheme = localStorage.getItem('color-theme');
+            const isDark = savedTheme === 'dark' || (savedTheme === null && prefersDark);
+            applyTheme(isDark);
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeTheme();
+        });
+    </script>
+
+</body>
+</html>

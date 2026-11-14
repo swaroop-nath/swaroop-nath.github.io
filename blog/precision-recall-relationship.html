@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Precision-Recall Relationship &middot; Swaroop Nath</title>
+    <meta name="description" content="Why precision and recall move in opposite directions as a classifier's decision threshold changes. An interactive, Claude-generated edition of a 2023 post.">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: { extend: { fontFamily: { sans: ['DM Sans', 'system-ui', '-apple-system', 'Segoe UI', 'sans-serif'] } } },
+        }
+    </script>
+    <link rel="stylesheet" href="../assets/project.css">
+    <script src="../assets/project.js"></script>
+    <style>
+        /* Class colours follow the original figure: +1 green, -1 red.
+           Both pairs pass the dataviz validator (CVD separation >= 8)
+           against their own surface. */
+        :root { --pos: #3f9f60; --neg: #b0341c; --prec: var(--accent); --rec: var(--series-2); }
+        html.dark { --pos: #4fa86a; --neg: #d04a2c; }
+
+        .prose-post p { line-height: 1.75; }
+        .eq { display: flex; align-items: center; gap: 1rem; margin: 1.25rem 0; }
+        .eq-num { flex: none; width: 2.25rem; color: var(--muted); font-size: 0.875rem; }
+        .eq-body { flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden; text-align: center; padding: 0.25rem 0; }
+        .katex { font-size: 1.05em; }
+
+        /* Everything Claude added is set apart from the original text */
+        .added { border-left: 2px solid var(--accent); padding-left: 0.9rem; }
+        .added-label { color: var(--accent); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+
+        .plot { position: relative; width: 100%; touch-action: pan-y; cursor: crosshair; }
+        .plot svg { display: block; overflow: visible; }
+        .tip {
+            position: absolute; pointer-events: none; z-index: 5;
+            background: var(--surface); border: 1px solid var(--line); border-radius: 0.375rem;
+            padding: 0.4rem 0.55rem; font-size: 0.75rem; line-height: 1.45; color: var(--fg);
+            box-shadow: 0 4px 14px rgba(0,0,0,0.12); white-space: nowrap;
+        }
+        .tip b { color: var(--fg-strong); font-weight: 600; }
+
+        .legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1rem; font-size: 0.75rem; color: var(--muted); }
+        .legend span { display: inline-flex; align-items: center; gap: 0.4rem; }
+        .sw { width: 0.85rem; height: 0.6rem; border-radius: 2px; display: inline-block; }
+        .sw-line { width: 1rem; height: 0; border-top: 2px solid; display: inline-block; }
+
+        .tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.5rem; }
+        @media (max-width: 560px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+        .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 0.5rem; padding: 0.5rem 0.65rem; }
+        .tile .k { font-size: 0.7rem; color: var(--muted); }
+        .tile .v { font-size: 1.05rem; font-weight: 600; color: var(--fg-strong); font-variant-numeric: tabular-nums; }
+
+        .checks { font-size: 0.85rem; line-height: 1.6; }
+        .checks li { display: flex; gap: 0.5rem; align-items: baseline; }
+        .ok { color: var(--good); font-weight: 600; white-space: nowrap; }
+        .no { color: var(--bad); font-weight: 600; white-space: nowrap; }
+        .num { font-variant-numeric: tabular-nums; }
+
+        .ctl { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; font-size: 0.85rem; }
+        .ctl label { color: var(--fg); white-space: nowrap; }
+        .ctl output { color: var(--fg-strong); font-variant-numeric: tabular-nums; min-width: 3.5rem; text-align: right; }
+        .btn-sm { border: 1px solid var(--line); border-radius: 0.375rem; padding: 0.25rem 0.6rem; font-size: 0.8rem; color: var(--muted); background: var(--surface); }
+        .btn-sm:hover { color: var(--accent); border-color: var(--accent); }
+
+        .pr-grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 1.25rem; }
+        @media (max-width: 640px) { .pr-grid { grid-template-columns: minmax(0, 1fr); } }
+    </style>
+</head>
+<body class="bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-200">
+
+    <header class="bg-white/90 dark:bg-gray-950/90 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
+        <nav class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center h-16">
+            <div>
+                <a href="../index.html" class="text-lg font-semibold tracking-tight text-gray-900 dark:text-white">Swaroop Nath</a>
+            </div>
+            <div class="flex items-center space-x-6">
+                <div class="hidden sm:flex items-center space-x-5 text-sm text-gray-500 dark:text-gray-400">
+                    <a href="../index.html#about" class="hover:text-gray-900 dark:hover:text-white">About</a>
+                    <a href="../index.html#news" class="hover:text-gray-900 dark:hover:text-white">News</a>
+                    <a href="../index.html#publications" class="hover:text-gray-900 dark:hover:text-white">Publications</a>
+                    <a href="../talks.html" class="hover:text-gray-900 dark:hover:text-white">Talks</a>
+                    <a href="../blog.html" class="text-gray-900 dark:text-white">Blog</a>
+                </div>
+                <button id="theme-toggle-main" class="p-2 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-500 dark:text-gray-400">
+                    <span id="theme-icon-container"><i data-lucide="moon" class="h-5 w-5"></i></span>
+                    <span class="sr-only">Toggle theme</span>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        <a href="../blog.html" class="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white">
+            <i data-lucide="arrow-left" class="h-4 w-4"></i> Blog
+        </a>
+
+        <h1 class="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight text-gray-900 dark:text-white">Precision-Recall Relationship</h1>
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Swaroop Nath &middot; August 2023</p>
+
+        <aside class="mt-6 rounded-lg border p-4 text-sm leading-relaxed" style="border-color: var(--accent); background: var(--accent-soft);">
+            <p class="font-semibold text-gray-900 dark:text-white"><i class="fas fa-wand-magic-sparkles mr-1.5" style="color: var(--accent)"></i> Interactive edition, generated by Claude</p>
+            <p class="mt-1.5 text-gray-700 dark:text-gray-300">
+                This page is a copy of my August 2023 post, made by Claude (Anthropic&rsquo;s AI model). The text and equations follow the original. The interactive figures and the notes marked <span class="added-label">Interactive</span> were added by Claude.
+                <a href="https://www.cse.iitb.ac.in/~swaroopnath/precision_recall_relationship.pdf" target="_blank" rel="noopener noreferrer" class="accent font-semibold whitespace-nowrap">Read the original (PDF) <i class="fas fa-arrow-up-right-from-square text-xs"></i></a>
+            </p>
+        </aside>
+
+        <article class="prose-post mt-10 text-gray-700 dark:text-gray-300">
+            <p>For the purpose of this discussion, we will assume the following things &ndash;</p>
+            <ol class="mt-3 space-y-2 pl-1">
+                <li class="flex gap-3"><span class="font-mono text-sm pt-0.5 text-gray-500 dark:text-gray-400 whitespace-nowrap">A-1.</span><span>We are looking at classifiers which define a linear decision boundary in some embedding space, such as <code class="text-sm">SVM</code>, <code class="text-sm">Logistic Regression</code>, etc.</span></li>
+                <li class="flex gap-3"><span class="font-mono text-sm pt-0.5 text-gray-500 dark:text-gray-400 whitespace-nowrap">A-2.</span><span>The data is nearly linearly separable, that is with the linear decision boundary most of the negative class data (<code class="text-sm">-1</code>) lie on one side and most of the positive class data (<code class="text-sm">+1</code>) lie on the other side.</span></li>
+                <li class="flex gap-3"><span class="font-mono text-sm pt-0.5 text-gray-500 dark:text-gray-400 whitespace-nowrap">A-3.</span><span>The data is nearly balanced, that is \(|{-1}| \sim |{+1}|\).</span></li>
+            </ol>
+
+            <p class="mt-6">Precision is defined as the fraction of predicted positive samples which are actually positive (Equation 1). Recall is defined as the fraction of true positive samples which are predicted as positive (Equation 2).</p>
+
+            <div class="eq"><span class="eq-num">(1)</span><div class="eq-body">\[ \begin{aligned} P &= \frac{\textit{true\_positive}}{\textit{true\_positive} + \textit{false\_positive}} \\ &= \frac{TP}{TP + FP} \end{aligned} \]</div></div>
+            <div class="eq"><span class="eq-num">(2)</span><div class="eq-body">\[ \begin{aligned} R &= \frac{\textit{true\_positive}}{\textit{true\_positive} + \textit{false\_negative}} \\ &= \frac{\textit{true\_positive}}{\textit{total\_actual\_true}} \\ &= \frac{TP}{TAT} \end{aligned} \]</div></div>
+
+            <p>The entities \(TP\), \(FP\) and \(FN\) are all dependent on the decision threshold \((\theta_t)\). Formally, we state certain properties in the Equations below, 3 &ndash; 5. Note that \(TP + FN\) denote the total number of positive samples in the test set, we denote that by \(TAT\) in the equations above.</p>
+
+            <div class="eq"><span class="eq-num">(3)</span><div class="eq-body">\[ TP = f(\theta_t), \quad FP = g(\theta_t) \]</div></div>
+            <div class="eq"><span class="eq-num">(4)</span><div class="eq-body">\[ f(\theta_t) \ge 0,\ \forall\, \theta_t; \quad g(\theta_t) \ge 0,\ \forall \theta_t \]</div></div>
+            <div class="eq"><span class="eq-num">(5)</span><div class="eq-body">\[ f'(\theta_t) < 0,\ \forall\, \theta_t; \quad g'(\theta_t) < 0,\ \forall \theta_t \]</div></div>
+
+            <!-- Figure 1, made interactive -->
+            <figure class="demo my-8 not-prose" id="fig1">
+                <div class="legend">
+                    <span><i class="sw-line" style="border-color: var(--pos)"></i>+1 density</span>
+                    <span><i class="sw-line" style="border-color: var(--neg)"></i>&minus;1 density</span>
+                    <span><i class="sw" style="background: var(--pos); opacity: .35"></i>TP</span>
+                    <span><i class="sw" style="background: var(--neg); opacity: .35"></i>FP</span>
+                    <span><i class="sw" style="background: repeating-linear-gradient(45deg, var(--pos) 0 1.5px, transparent 1.5px 4px)"></i>FN</span>
+                </div>
+                <div class="plot mt-3" id="plot-density" aria-label="Densities of the two classes with a movable decision threshold" role="img"><div class="tip" hidden></div></div>
+                <div class="ctl mt-4">
+                    <label for="theta-1">Threshold \(\theta_t\)</label>
+                    <input type="range" id="theta-1" class="theta-input" min="-4.5" max="4.5" step="0.01">
+                    <output class="theta-out"></output>
+                </div>
+                <div class="tiles mt-4" id="tiles"></div>
+                <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <button type="button" class="btn-sm" data-snap="c">Move to \(\theta_c\)</button>
+                    <button type="button" class="btn-sm" data-snap="p1">Move to \(\theta_{+1}\)</button>
+                </div>
+                <figcaption class="mt-4 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+                    <span class="font-semibold tracking-wide">Figure 1.</span> Typical density of <code>+1</code> (green) and <code>-1</code> (red) classes in a well trained classifier. The black line denotes a possible decision boundary &ndash; in this case, it is the optimal decision boundary, \(\theta_c\).
+                    <span class="added block mt-2"><span class="added-label">Interactive</span> The solid line is now the threshold \(\theta_t\): drag it on the plot or use the slider. Dotted lines mark \(\theta_c\), where the two densities cross, and \(\theta_{+1}\), past which no <code>-1</code> examples remain. The two classes are mixtures of Gaussians shaped like the original figure, with 1,000 examples each.</span>
+                </figcaption>
+            </figure>
+
+            <p>In the context of Figure 1, one can appreciate the following inequalities (Equations 6 &ndash; 8). Equation 6 highlights that the amount of True Positives is always greater than the False Positives. For a nearly balanced dataset, and well-learned classifier, this inequality holds invariably. Equations 7 and 8 depict the relation between the magnitude of gradients \(f'(\theta_t)\) and \(g'(\theta_t)\). The equilibrium \((\theta_c)\) is an optimal decision threshold when the density of FP and FN are roughly the same. To the left of \(\theta_c\), as \(\theta_t\) increases, the rate of reduction of TP is less than the rate of reduction of FP. And, to the right of \(\theta_c\), the rate of reduction of TP is more than the rate of reduction of FP. This can be appreciated with reference to Figure 1.</p>
+
+            <div class="eq"><span class="eq-num">(6)</span><div class="eq-body">\[ f(\theta_t) > g(\theta_t),\ \forall\, \theta_t \]</div></div>
+            <div class="eq"><span class="eq-num">(7)</span><div class="eq-body">\[ |f'(\theta_t)| < |g'(\theta_t)| \implies f'(\theta_t) > g'(\theta_t),\ \forall\, \theta_t < \theta_c \]</div></div>
+            <div class="eq"><span class="eq-num">(8)</span><div class="eq-body">\[ |f'(\theta_t)| > |g'(\theta_t)| \implies f'(\theta_t) < g'(\theta_t),\ \forall\, \theta_t > \theta_c \]</div></div>
+
+            <div class="demo my-8 not-prose" id="fig-fg">
+                <p class="added text-sm leading-relaxed text-gray-600 dark:text-gray-400"><span class="added-label">Interactive</span> \(f\) and \(g\) are the counts above the threshold. The dashed segments are their slopes at \(\theta_t\). Move \(\theta_t\) across \(\theta_c\) to see Equation 7 hand over to Equation 8.</p>
+                <div class="legend mt-4">
+                    <span><i class="sw-line" style="border-color: var(--pos)"></i>\(f(\theta) = TP\)</span>
+                    <span><i class="sw-line" style="border-color: var(--neg)"></i>\(g(\theta) = FP\)</span>
+                </div>
+                <div class="plot mt-3" id="plot-fg" aria-label="True and false positive counts as functions of the threshold" role="img"><div class="tip" hidden></div></div>
+                <div class="ctl mt-4">
+                    <label for="theta-2">Threshold \(\theta_t\)</label>
+                    <input type="range" id="theta-2" class="theta-input" min="-4.5" max="4.5" step="0.01">
+                    <output class="theta-out"></output>
+                </div>
+                <ul class="checks mt-4" id="checks-fg"></ul>
+            </div>
+
+            <p>Let us now look at the derivatives of Precision and Recall wrt \(\theta_t\).</p>
+
+            <div class="eq"><span class="eq-num">(9)</span><div class="eq-body">\[ \begin{aligned} \frac{d}{d\theta_t} R &= \frac{1}{TAT} f'(\theta_t) < 0 \\ \frac{d}{d\theta_t} R &< 0 \end{aligned} \]</div></div>
+
+            <p>From Equation 9 it is understandable that Recall decreases with increase in \(\theta_t\).</p>
+
+            <div class="eq"><span class="eq-num"></span><div class="eq-body">\[ \frac{d}{d\theta_t} P = \frac{f'(\theta_t)\, g(\theta_t) - f(\theta_t)\, g'(\theta_t)}{\big(f(\theta_t) + g(\theta_t)\big)^2} \]</div></div>
+
+            <p>For \(\theta_t < \theta_c\), we have \(f(\theta_t) > g(\theta_t) \implies f(\theta_t)f'(\theta_t) < g(\theta_t)f'(\theta_t)\). And we also have \(f'(\theta_t) > g'(\theta_t) \implies f(\theta_t)f'(\theta_t) > f(\theta_t)g'(\theta_t)\). Thus, we have \(f(\theta_t)g'(\theta_t) < g(\theta_t)f'(\theta_t) \implies f'(\theta_t)g(\theta_t) - g'(\theta_t)f(\theta_t) > 0\). Hence, we have \(\frac{d}{d\theta_t} P > 0\).</p>
+
+            <p class="mt-4">Let \(\theta_{+1}\) be the value of threshold beyond which no <code class="text-sm">-1</code> examples exist. Hence, for \(\theta_t > \theta_{+1}\), we have \(g(\theta_t) = 0\) and \(g'(\theta_t) = 0\). From Equation 1, we can conclude that the Precision is 1. For \(\theta_c < \theta_t < \theta_{+1}\), \(g(\theta_t) > 0\), hence Precision \(< 1\). Intuitively, we can thus see that Precision increases within this range too. Although, in this mathematical treatment there is no justification to suggest a monotonical increase, yet, the overall Precision increases from \(\theta_c\) to \(\theta_{+1}\). Thus, we roughly have</p>
+
+            <div class="eq"><span class="eq-num">(10)</span><div class="eq-body">\[ \frac{d}{d\theta_t} P > 0 \]</div></div>
+
+            <p>From Equations 9 and 10, we can understand why Precision and Recall roughly follow an opposing relationship.</p>
+
+            <div class="demo my-8 not-prose" id="fig-pr">
+                <p class="added text-sm leading-relaxed text-gray-600 dark:text-gray-400"><span class="added-label">Interactive</span> Precision and recall as the threshold moves (left), and the precision&ndash;recall curve they trace (right). Hover either plot for values; click to move \(\theta_t\).</p>
+                <div class="legend mt-4">
+                    <span><i class="sw-line" style="border-color: var(--prec)"></i>Precision \(P\)</span>
+                    <span><i class="sw-line" style="border-color: var(--rec); border-top-style: dashed"></i>Recall \(R\)</span>
+                </div>
+                <div class="pr-grid mt-3">
+                    <div class="plot" id="plot-pr-theta" aria-label="Precision and recall against the threshold" role="img"><div class="tip" hidden></div></div>
+                    <div class="plot" id="plot-pr-curve" aria-label="Precision against recall" role="img"><div class="tip" hidden></div></div>
+                </div>
+                <div class="ctl mt-4">
+                    <label for="theta-3">Threshold \(\theta_t\)</label>
+                    <input type="range" id="theta-3" class="theta-input" min="-4.5" max="4.5" step="0.01">
+                    <output class="theta-out"></output>
+                </div>
+                <ul class="checks mt-4" id="checks-pr"></ul>
+                <details class="mt-4 text-sm">
+                    <summary class="cursor-pointer accent">Show values as a table</summary>
+                    <div class="mt-3 overflow-x-auto"><table class="results" id="pr-table"></table></div>
+                </details>
+            </div>
+
+            <section class="mt-12" id="assumptions">
+                <h2 class="section-title">What if the assumptions break?</h2>
+                <div class="added mt-5">
+                    <p class="text-sm leading-relaxed text-gray-600 dark:text-gray-400"><span class="added-label">Interactive</span> The argument leans on A-2 (the classes are well separated) and A-3 (they are balanced). Bend either one; every figure above updates, and the checks below are recomputed across the whole range of thresholds.</p>
+                </div>
+                <div class="demo mt-5">
+                    <div class="space-y-4">
+                        <div class="ctl">
+                            <label for="ratio">Class ratio \(|{-1}| : |{+1}|\) (A-3)</label>
+                            <input type="range" id="ratio" min="-2" max="3" step="0.01" value="0">
+                            <output id="ratio-out"></output>
+                        </div>
+                        <div class="ctl">
+                            <label for="sep">Separation (A-2)</label>
+                            <input type="range" id="sep" min="-2" max="1.5" step="0.01" value="0">
+                            <output id="sep-out"></output>
+                        </div>
+                    </div>
+                    <ul class="checks mt-5" id="checks-global"></ul>
+                    <div class="mt-4"><button type="button" class="btn-sm" id="reset">Reset to the original setting</button></div>
+                </div>
+            </section>
+        </article>
+    </main>
+
+    <script>
+        // ---------- Model ----------
+        // Two classes, each a mixture of Gaussians shaped like the original
+        // Figure 1 (an illustration, not data). Counts are expected counts.
+        const BASE_NEG = [[0.38, -2.1, 0.48], [0.62, -1.05, 0.95]];
+        const BASE_POS = [[0.35, 0.9, 0.9], [0.65, 2.9, 0.85]];
+        const N_POS = 1000;
+        const X0 = -5, X1 = 5, STEP = 0.02;
+
+        const state = { theta: 0, ratio: 1, sep: 0, hover: {} };
+
+        function erf(x) {
+            const s = Math.sign(x); x = Math.abs(x);
+            const t = 1 / (1 + 0.3275911 * x);
+            return s * (1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x));
+        }
+        const pdf = (x, m, s) => Math.exp(-0.5 * ((x - m) / s) ** 2) / (s * Math.sqrt(2 * Math.PI));
+        const sf = (x, m, s) => 0.5 * (1 - erf((x - m) / (s * Math.SQRT2)));
+
+        let M; // current model
+        function buildModel() {
+            const d = state.sep / 2;
+            const neg = BASE_NEG.map(([w, m, s]) => [w, m - d, s]);
+            const pos = BASE_POS.map(([w, m, s]) => [w, m + d, s]);
+            const nNeg = N_POS * state.ratio;
+            const dens = (c, x) => c.reduce((a, [w, m, s]) => a + w * pdf(x, m, s), 0);
+            const surv = (c, x) => c.reduce((a, [w, m, s]) => a + w * sf(x, m, s), 0);
+            const at = x => {
+                const f = N_POS * surv(pos, x), g = nNeg * surv(neg, x);
+                const fp = -N_POS * dens(pos, x), gp = -nNeg * dens(neg, x);
+                const P = f + g >= 0.5 ? f / (f + g) : null;
+                const R = f / N_POS;
+                const dP = f + g >= 0.5 ? (fp * g - f * gp) / (f + g) ** 2 : null;
+                return { x, f, g, fp, gp, fn: N_POS - f, P, R, dP, dR: fp / N_POS, dPos: -fp, dNeg: -gp };
+            };
+            const grid = [];
+            for (let x = X0; x <= X1 + 1e-9; x += STEP) grid.push(at(+x.toFixed(4)));
+            // θc: first crossing where the +1 density overtakes the -1 density
+            let thetaC = null, crossings = 0;
+            for (let i = 1; i < grid.length; i++) {
+                const a = grid[i - 1].dPos - grid[i - 1].dNeg, b = grid[i].dPos - grid[i].dNeg;
+                if (Math.sign(a) !== Math.sign(b) && a !== 0) {
+                    crossings++;
+                    if (thetaC === null && b > a) thetaC = grid[i - 1].x + STEP * (-a) / (b - a);
+                }
+            }
+            // θ+1: past here fewer than half an expected -1 example remains, so FP rounds to 0
+            let thetaP1 = null;
+            for (let x = X0; x <= 9; x += 0.005) { if (nNeg * surv(neg, x) < 0.5) { thetaP1 = x; break; } }
+            M = { at, grid, thetaC, thetaP1, crossings, nNeg };
+        }
+
+        // ---------- Helpers ----------
+        const $ = s => document.querySelector(s);
+        const css = n => window.cssVar(n);
+        const fmtN = v => Math.round(v).toLocaleString('en-US');
+        const fmt3 = v => v === null ? '&ndash;' : v.toFixed(3);
+        const fmtTheta = v => (v < 0 ? '&minus;' : '') + Math.abs(v).toFixed(2);
+        const sgn = v => (v >= 0 ? '+' : '&minus;') + Math.abs(v);
+        const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+        const tex = s => window.katex ? katex.renderToString(s, { throwOnError: false }) : s;
+        const mark = ok => ok ? '<span class="ok">&#10003; holds</span>' : '<span class="no">&#10007; fails</span>';
+
+        function setTheta(v) {
+            state.theta = clamp(+v, -4.5, 4.5);
+            renderAll();
+        }
+
+        // Generic chart: x is the threshold axis unless opts.x0/x1 say otherwise.
+        function chart(host, opts) {
+            const tip = host.querySelector('.tip');
+            let scale = null, dragging = false;
+            function render() {
+                const W = host.clientWidth;
+                const H = opts.height(W);
+                const m = opts.margin;
+                const x0 = opts.x0 ?? X0, x1 = opts.x1 ?? X1;
+                const x = v => m.l + (v - x0) / (x1 - x0) * (W - m.l - m.r);
+                const xinv = px => x0 + (px - m.l) / (W - m.l - m.r) * (x1 - x0);
+                const [y0, y1] = opts.yDomain();
+                const y = v => H - m.b - (v - y0) / (y1 - y0) * (H - m.t - m.b);
+                scale = { x, xinv, y, W, H, m };
+                const old = host.querySelector('svg'); if (old) old.remove();
+                host.insertAdjacentHTML('afterbegin', `<svg width="${W}" height="${H}" font-family="DM Sans, system-ui, sans-serif">${opts.draw(scale)}</svg>`);
+            }
+            const local = e => { const r = host.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+            host.addEventListener('pointerdown', e => {
+                if (!scale) return;
+                const [px, py] = local(e);
+                const v = opts.pick ? opts.pick(px, py, scale) : scale.xinv(px);
+                if (v === null) return;
+                dragging = !opts.pick; if (dragging) host.setPointerCapture(e.pointerId);
+                setTheta(v);
+            });
+            host.addEventListener('pointerup', () => { dragging = false; });
+            host.addEventListener('pointermove', e => {
+                if (!scale) return;
+                const [px, py] = local(e);
+                if (dragging) { setTheta(scale.xinv(px)); return; }
+                if (e.pointerType === 'touch') return;
+                const h = opts.hover(px, py, scale);
+                if (!h) { tip.hidden = true; state.hover[opts.id] = null; render(); return; }
+                state.hover[opts.id] = h.at;
+                render();
+                tip.innerHTML = h.html; tip.hidden = false;
+                const tw = tip.offsetWidth, th = tip.offsetHeight;
+                tip.style.left = clamp(px + 12, 0, scale.W - tw) + 'px';
+                tip.style.top = clamp(py - th - 10, 0, scale.H - th) + 'px';
+            });
+            host.addEventListener('pointerleave', () => { tip.hidden = true; state.hover[opts.id] = null; dragging = false; render(); });
+            return { render };
+        }
+
+        // Shared marks
+        const pathOf = (pts, sx, sy) => pts.map((p, i) => (i ? 'L' : 'M') + sx(p[0]).toFixed(1) + ',' + sy(p[1]).toFixed(1)).join('');
+        function xAxis(s, ticks, label) {
+            const { x, H, m, W } = s;
+            let out = `<line x1="${m.l}" x2="${W - m.r}" y1="${H - m.b}" y2="${H - m.b}" stroke="${css('--line')}"/>`;
+            ticks.forEach(t => { out += `<text x="${x(t)}" y="${H - m.b + 16}" text-anchor="middle" font-size="11" fill="${css('--muted')}">${t < 0 ? '−' + Math.abs(t) : t}</text>`; });
+            if (label) out += `<text x="${W - m.r}" y="${H - m.b + 30}" text-anchor="end" font-size="11" fill="${css('--muted')}">${label}</text>`;
+            return out;
+        }
+        function vline(s, v, opts = {}) {
+            if (v === null || v < (opts.x0 ?? X0) || v > (opts.x1 ?? X1)) return '';
+            const X = s.x(v).toFixed(1);
+            let out = `<line x1="${X}" x2="${X}" y1="${s.m.t - (opts.ext || 0)}" y2="${s.H - s.m.b}" stroke="${opts.color || css('--muted')}" stroke-width="${opts.w || 1}" ${opts.dash ? `stroke-dasharray="${opts.dash}"` : ''}/>`;
+            // Labels sit at the foot of the line, clear of the threshold handle above
+            if (opts.label) out += `<text x="${+X + 4}" y="${s.H - s.m.b - 6}" font-size="12" fill="${css('--muted')}" font-style="italic">${opts.label}</text>`;
+            return out;
+        }
+        function crosshair(s, id) {
+            const h = state.hover[id];
+            return h === null || h === undefined ? '' : vline(s, h, { color: css('--faint'), dash: '2 3' });
+        }
+        function thresholdLine(s) {
+            const X = s.x(state.theta).toFixed(1);
+            return `<line x1="${X}" x2="${X}" y1="${s.m.t - 8}" y2="${s.H - s.m.b}" stroke="${css('--fg-strong')}" stroke-width="2"/>`
+                + `<circle cx="${X}" cy="${s.m.t - 8}" r="5" fill="${css('--surface')}" stroke="${css('--fg-strong')}" stroke-width="2"/>`;
+        }
+
+        // ---------- Figure 1: densities ----------
+        const densityChart = chart($('#plot-density'), {
+            id: 'density',
+            height: W => (W < 480 ? 210 : 250),
+            margin: { l: 8, r: 8, t: 30, b: 36 },
+            yDomain: () => [0, Math.max(...M.grid.map(p => Math.max(p.dPos, p.dNeg))) * 1.08],
+            draw: s => {
+                const { x, y } = s;
+                const pos = M.grid.map(p => [p.x, p.dPos]), neg = M.grid.map(p => [p.x, p.dNeg]);
+                const right = pts => pts.filter(p => p[0] >= state.theta);
+                const left = pts => pts.filter(p => p[0] <= state.theta);
+                const area = pts => pts.length < 2 ? '' : pathOf(pts, x, y) + `L${x(pts[pts.length - 1][0])},${y(0)}L${x(pts[0][0])},${y(0)}Z`;
+                const peak = arr => arr.reduce((a, b) => (b[1] > a[1] ? b : a));
+                const pk = peak(pos), nk = peak(neg);
+                return `<defs><pattern id="hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="5" stroke="${css('--pos')}" stroke-width="1.5" opacity="0.6"/></pattern></defs>`
+                    + xAxis(s, [-4, -2, 0, 2, 4], 'θ')
+                    + `<path d="${area(left(pos))}" fill="url(#hatch)"/>`
+                    + `<path d="${area(right(pos))}" fill="${css('--pos')}" fill-opacity="0.3"/>`
+                    + `<path d="${area(right(neg))}" fill="${css('--neg')}" fill-opacity="0.3"/>`
+                    + `<path d="${pathOf(neg, x, y)}" fill="none" stroke="${css('--neg')}" stroke-width="2"/>`
+                    + `<path d="${pathOf(pos, x, y)}" fill="none" stroke="${css('--pos')}" stroke-width="2"/>`
+                    + `<text x="${x(nk[0])}" y="${y(nk[1]) - 8}" text-anchor="middle" font-size="12" font-weight="600" fill="${css('--fg')}">−1</text>`
+                    + `<text x="${x(pk[0])}" y="${y(pk[1]) - 8}" text-anchor="middle" font-size="12" font-weight="600" fill="${css('--fg')}">+1</text>`
+                    + vline(s, M.thetaC, { dash: '3 3', label: 'θc' })
+                    + vline(s, M.thetaP1, { dash: '3 3', label: 'θ₊₁' })
+                    + crosshair(s, 'density')
+                    + thresholdLine(s);
+            },
+            hover: (px, py, s) => {
+                const v = s.xinv(px); if (v < X0 || v > X1) return null;
+                const p = M.at(v);
+                return { at: v, html: `<b>θ = ${fmtTheta(v)}</b><br>TP ${fmtN(p.f)} · FP ${fmtN(p.g)} · FN ${fmtN(p.fn)}<br>P ${fmt3(p.P)} · R ${fmt3(p.R)}` };
+            },
+        });
+
+        // ---------- f and g ----------
+        const fgChart = chart($('#plot-fg'), {
+            id: 'fg',
+            height: W => (W < 480 ? 210 : 240),
+            margin: { l: 44, r: 10, t: 22, b: 36 },
+            yDomain: () => [0, Math.max(N_POS, M.nNeg) * 1.05],
+            draw: s => {
+                const { x, y, m, W } = s;
+                const top = Math.max(N_POS, M.nNeg);
+                let grid = '';
+                [0, 0.5, 1].forEach(fr => {
+                    const v = Math.round(top * fr);
+                    grid += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--line')}" stroke-width="${fr ? 1 : 0}"/>`
+                        + `<text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${css('--muted')}">${v.toLocaleString('en-US')}</text>`;
+                });
+                const p = M.at(state.theta), dx = 0.7;
+                const tan = (val, slope, color) => {
+                    const xa = clamp(state.theta - dx, X0, X1), xb = clamp(state.theta + dx, X0, X1);
+                    return `<line x1="${x(xa)}" y1="${y(val + slope * (xa - state.theta))}" x2="${x(xb)}" y2="${y(val + slope * (xb - state.theta))}" stroke="${color}" stroke-width="2" stroke-dasharray="5 3"/>`;
+                };
+                const fPts = M.grid.map(q => [q.x, q.f]), gPts = M.grid.map(q => [q.x, q.g]);
+                const lx = -4.2;
+                return `<clipPath id="fg-clip"><rect x="${m.l}" y="${m.t - 10}" width="${W - m.l - m.r}" height="${s.H - m.t - m.b + 10}"/></clipPath>`
+                    + grid + xAxis(s, [-4, -2, 0, 2, 4], 'θ')
+                    + `<path d="${pathOf(gPts, x, y)}" fill="none" stroke="${css('--neg')}" stroke-width="2"/>`
+                    + `<path d="${pathOf(fPts, x, y)}" fill="none" stroke="${css('--pos')}" stroke-width="2"/>`
+                    + `<g clip-path="url(#fg-clip)">${tan(p.f, p.fp, css('--pos'))}${tan(p.g, p.gp, css('--neg'))}</g>`
+                    + `<circle cx="${x(state.theta)}" cy="${y(p.f)}" r="4" fill="${css('--pos')}" stroke="${css('--surface')}" stroke-width="2"/>`
+                    + `<circle cx="${x(state.theta)}" cy="${y(p.g)}" r="4" fill="${css('--neg')}" stroke="${css('--surface')}" stroke-width="2"/>`
+                    + `<text x="${x(3.2)}" y="${y(M.at(3.2).f) - 8}" font-size="12" font-weight="600" fill="${css('--fg')}">f</text>`
+                    + `<text x="${x(lx)}" y="${y(M.at(lx).g) + (M.nNeg > N_POS ? -8 : 16)}" font-size="12" font-weight="600" fill="${css('--fg')}">g</text>`
+                    + vline(s, M.thetaC, { dash: '3 3', label: 'θc' })
+                    + crosshair(s, 'fg')
+                    + thresholdLine(s);
+            },
+            hover: (px, py, s) => {
+                const v = s.xinv(px); if (v < X0 || v > X1) return null;
+                const p = M.at(v);
+                return { at: v, html: `<b>θ = ${fmtTheta(v)}</b><br>f = TP ${fmtN(p.f)} · f′ ${p.fp.toFixed(1)}<br>g = FP ${fmtN(p.g)} · g′ ${p.gp.toFixed(1)}` };
+            },
+        });
+
+        // ---------- P and R ----------
+        const prThetaChart = chart($('#plot-pr-theta'), {
+            id: 'prt',
+            height: W => (W < 480 ? 200 : 230),
+            margin: { l: 34, r: 10, t: 22, b: 36 },
+            yDomain: () => [0, 1.02],
+            draw: s => {
+                const { x, y, m, W } = s;
+                let grid = '';
+                [0, 0.5, 1].forEach(v => {
+                    grid += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--line')}" stroke-width="${v ? 1 : 0}"/>`
+                        + `<text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${css('--muted')}">${v}</text>`;
+                });
+                const P = M.grid.filter(q => q.P !== null).map(q => [q.x, q.P]);
+                const R = M.grid.map(q => [q.x, q.R]);
+                const p = M.at(state.theta);
+                return grid + xAxis(s, [-4, -2, 0, 2, 4], 'θ')
+                    + `<path d="${pathOf(R, x, y)}" fill="none" stroke="${css('--rec')}" stroke-width="2" stroke-dasharray="6 4"/>`
+                    + `<path d="${pathOf(P, x, y)}" fill="none" stroke="${css('--prec')}" stroke-width="2"/>`
+                    + vline(s, M.thetaC, { dash: '3 3', label: 'θc' })
+                    + vline(s, M.thetaP1, { dash: '3 3', label: 'θ₊₁' })
+                    + crosshair(s, 'prt')
+                    + thresholdLine(s)
+                    + (p.P !== null ? `<circle cx="${x(state.theta)}" cy="${y(p.P)}" r="4.5" fill="${css('--prec')}" stroke="${css('--surface')}" stroke-width="2"/>` : '')
+                    + `<circle cx="${x(state.theta)}" cy="${y(p.R)}" r="4.5" fill="${css('--rec')}" stroke="${css('--surface')}" stroke-width="2"/>`
+                    + `<text x="${x(-4.6)}" y="${y(M.at(-4.6).P ?? 0) - 8}" font-size="12" font-weight="600" fill="${css('--fg')}">P</text>`
+                    + `<text x="${x(4.3)}" y="${y(M.at(4.3).R) - 8}" font-size="12" font-weight="600" fill="${css('--fg')}">R</text>`;
+            },
+            hover: (px, py, s) => {
+                const v = s.xinv(px); if (v < X0 || v > X1) return null;
+                const p = M.at(v);
+                return { at: v, html: `<b>θ = ${fmtTheta(v)}</b><br>P ${fmt3(p.P)} · R ${fmt3(p.R)}` };
+            },
+        });
+
+        const curvePts = () => M.grid.filter(q => q.P !== null && q.x >= -4.5 && q.x <= 4.5);
+        function nearestCurve(px, py, s) {
+            let best = null, bd = Infinity;
+            curvePts().forEach(q => { const d = (s.x(q.R) - px) ** 2 + (s.y(q.P) - py) ** 2; if (d < bd) { bd = d; best = q; } });
+            return bd < 40 * 40 ? best : null;
+        }
+        const prCurveChart = chart($('#plot-pr-curve'), {
+            id: 'prc',
+            x0: 0, x1: 1,
+            height: W => Math.min(230, Math.max(190, W * 0.8)),
+            margin: { l: 34, r: 12, t: 22, b: 36 },
+            yDomain: () => [Math.min(0.4, Math.floor(Math.min(...curvePts().map(q => q.P)) * 10) / 10), 1.02],
+            draw: s => {
+                const { x, y, m, W, H } = s;
+                const [y0] = [Math.min(0.4, Math.floor(Math.min(...curvePts().map(q => q.P)) * 10) / 10)];
+                let grid = '';
+                [y0, (y0 + 1) / 2, 1].forEach(v => {
+                    grid += `<line x1="${m.l}" x2="${W - m.r}" y1="${y(v)}" y2="${y(v)}" stroke="${css('--line')}" stroke-width="${v === y0 ? 0 : 1}"/>`
+                        + `<text x="${m.l - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" fill="${css('--muted')}">${+v.toFixed(2)}</text>`;
+                });
+                let axis = `<line x1="${m.l}" x2="${W - m.r}" y1="${H - m.b}" y2="${H - m.b}" stroke="${css('--line')}"/>`;
+                [0, 0.5, 1].forEach(t => { axis += `<text x="${x(t)}" y="${H - m.b + 16}" text-anchor="middle" font-size="11" fill="${css('--muted')}">${t}</text>`; });
+                axis += `<text x="${W - m.r}" y="${H - m.b + 30}" text-anchor="end" font-size="11" fill="${css('--muted')}">Recall</text>`;
+                axis += `<text x="${m.l}" y="${m.t - 8}" font-size="11" fill="${css('--muted')}">Precision</text>`;
+                const pts = curvePts().map(q => [q.R, q.P]);
+                const p = M.at(state.theta);
+                const h = state.hover.prc;
+                const hp = h === null || h === undefined ? null : M.at(h);
+                return grid + axis
+                    + `<path d="${pathOf(pts, x, y)}" fill="none" stroke="${css('--prec')}" stroke-width="2"/>`
+                    + (hp && hp.P !== null ? `<circle cx="${x(hp.R)}" cy="${y(hp.P)}" r="6" fill="none" stroke="${css('--faint')}" stroke-width="1.5"/>` : '')
+                    + (p.P !== null ? `<circle cx="${x(p.R)}" cy="${y(Math.max(p.P, y0))}" r="5" fill="${css('--surface')}" stroke="${css('--fg-strong')}" stroke-width="2"/>` : '');
+            },
+            hover: (px, py, s) => {
+                const q = nearestCurve(px, py, s); if (!q) return null;
+                return { at: q.x, html: `<b>θ = ${fmtTheta(q.x)}</b><br>R ${fmt3(q.R)} · P ${fmt3(q.P)}` };
+            },
+            pick: (px, py, s) => { const q = nearestCurve(px, py, s); return q ? q.x : null; },
+        });
+
+        // ---------- Readouts ----------
+        function renderReadouts() {
+            const p = M.at(state.theta);
+            document.querySelectorAll('.theta-input').forEach(i => { i.value = state.theta; });
+            document.querySelectorAll('.theta-out').forEach(o => { o.innerHTML = fmtTheta(state.theta); });
+
+            $('#tiles').innerHTML = [
+                ['TP', fmtN(p.f)], ['FP', fmtN(p.g)], ['FN', fmtN(p.fn)], ['Precision', fmt3(p.P)], ['Recall', fmt3(p.R)],
+            ].map(([k, v]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('');
+
+            const left = M.thetaC !== null && state.theta < M.thetaC;
+            const absF = Math.abs(p.fp), absG = Math.abs(p.gp);
+            const eq78 = M.thetaC === null ? '' : left
+                ? `<li>${mark(absF < absG)}<span>${tex('\\theta_t < \\theta_c')}: ${tex('|f\'| = ' + absF.toFixed(1))} vs ${tex('|g\'| = ' + absG.toFixed(1))}, so Equation 7 ${tex('|f\'| < |g\'|')}</span></li>`
+                : `<li>${mark(absF > absG)}<span>${tex('\\theta_t > \\theta_c')}: ${tex('|f\'| = ' + absF.toFixed(1))} vs ${tex('|g\'| = ' + absG.toFixed(1))}, so Equation 8 ${tex('|f\'| > |g\'|')}</span></li>`;
+            const num = p.fp * p.g - p.f * p.gp;
+            $('#checks-fg').innerHTML =
+                `<li>${mark(Math.round(p.f) > Math.round(p.g))}<span>Equation 6 at ${tex('\\theta_t')}: ${tex('f = ' + Math.round(p.f))} vs ${tex('g = ' + Math.round(p.g))}</span></li>`
+                + eq78
+                + `<li><span class="${num >= 0 ? 'ok' : 'no'}">${num >= 0 ? '&#8599;' : '&#8600;'}</span><span>${tex("f'g - fg'")} ${num >= 0 ? '&gt;' : '&lt;'} 0, so precision is ${num >= 0 ? 'rising' : 'falling'} here</span></li>`;
+
+            $('#checks-pr').innerHTML =
+                `<li><span class="ok">&#8600;</span><span>${tex('\\frac{dR}{d\\theta_t}')} = <span class="num">${(p.dR).toFixed(3)}</span> (Equation 9: always negative)</span></li>`
+                + `<li><span class="${p.dP === null || p.dP >= 0 ? 'ok' : 'no'}">${p.dP === null || p.dP >= 0 ? '&#8599;' : '&#8600;'}</span><span>${tex('\\frac{dP}{d\\theta_t}')} = <span class="num">${p.dP === null ? '&ndash;' : p.dP.toFixed(3)}</span>${p.dP === null ? ' (no predicted positives)' : ''}</span></li>`;
+        }
+
+        function renderGlobal() {
+            $('#ratio-out').textContent = state.ratio >= 1 ? state.ratio.toFixed(2).replace(/\.?0+$/, '') + ' : 1' : '1 : ' + (1 / state.ratio).toFixed(2).replace(/\.?0+$/, '');
+            $('#sep-out').innerHTML = state.sep === 0 ? 'original' : sgn(state.sep.toFixed(2));
+            const g = M.grid;
+            // Eq. 6 over the whole range, on rounded counts
+            const bad6 = g.filter(q => Math.round(q.f) < Math.round(q.g));
+            const eq6 = bad6.length
+                ? `<li>${mark(false)}<span>Equation 6: more false positives than true positives for ${tex('\\theta_t < ' + bad6[bad6.length - 1].x.toFixed(2))}</span></li>`
+                : `<li>${mark(true)}<span>Equation 6: ${tex('f \\ge g')} at every threshold (equal only far left, where everything is predicted positive)</span></li>`;
+            // Precision between θc and θ+1
+            let mono = null;
+            if (M.thetaC !== null && M.thetaP1 !== null) {
+                const seg = g.filter(q => q.x >= M.thetaC && q.x <= M.thetaP1 && q.P !== null);
+                const dip = seg.find((q, i) => i && q.P < seg[i - 1].P - 1e-6);
+                mono = dip ? `<li>${mark(false)}<span>Precision is not monotonic between ${tex('\\theta_c')} and ${tex('\\theta_{+1}')}: it dips near ${tex('\\theta = ' + dip.x.toFixed(2))}</span></li>`
+                    : `<li>${mark(true)}<span>Precision rises steadily from ${tex('\\theta_c = ' + M.thetaC.toFixed(2))} to ${tex('\\theta_{+1} = ' + M.thetaP1.toFixed(2))} (Equation 10)</span></li>`;
+            }
+            const cross = M.thetaC === null
+                ? `<li>${mark(false)}<span>The densities never cross in view, so there is no ${tex('\\theta_c')}</span></li>`
+                : `<li>${mark(M.crossings === 1)}<span>The densities cross ${M.crossings === 1 ? 'once' : M.crossings + ' times'}${M.crossings === 1 ? ', at ' + tex('\\theta_c = ' + M.thetaC.toFixed(2)) : '; ' + tex('\\theta_c') + ' is taken as the first'}</span></li>`;
+            const minP = Math.min(...g.filter(q => q.P !== null).map(q => q.P));
+            $('#checks-global').innerHTML = cross + eq6 + (mono || '')
+                + `<li>${mark(true)}<span>Recall falls at every threshold (Equation 9 needs no assumptions)</span></li>`
+                + `<li><span class="text-gray-400">&middot;</span><span>Lowest precision in view: <span class="num">${minP.toFixed(3)}</span>, when every example is predicted positive</span></li>`;
+        }
+
+        function renderTable() {
+            const rows = [];
+            for (let v = -3; v <= 4.0001; v += 0.5) rows.push(M.at(+v.toFixed(2)));
+            $('#pr-table').innerHTML = '<thead><tr><th class="num">θ</th><th class="num">TP</th><th class="num">FP</th><th class="num">FN</th><th class="num">Precision</th><th class="num">Recall</th></tr></thead><tbody>'
+                + rows.map(p => `<tr><td class="num">${fmtTheta(p.x)}</td><td class="num">${fmtN(p.f)}</td><td class="num">${fmtN(p.g)}</td><td class="num">${fmtN(p.fn)}</td><td class="num">${fmt3(p.P)}</td><td class="num">${fmt3(p.R)}</td></tr>`).join('')
+                + '</tbody>';
+        }
+
+        function renderAll() {
+            densityChart.render(); fgChart.render(); prThetaChart.render(); prCurveChart.render();
+            renderReadouts();
+        }
+        function rebuild() { buildModel(); renderGlobal(); renderTable(); renderAll(); }
+
+        // ---------- Wiring ----------
+        document.querySelectorAll('.theta-input').forEach(i => i.addEventListener('input', () => setTheta(i.value)));
+        document.querySelectorAll('[data-snap]').forEach(b => b.addEventListener('click', () => {
+            const v = b.dataset.snap === 'c' ? M.thetaC : M.thetaP1;
+            if (v !== null) setTheta(v);
+        }));
+        $('#ratio').addEventListener('input', e => { state.ratio = Math.pow(2, +e.target.value); rebuild(); });
+        $('#sep').addEventListener('input', e => { state.sep = +e.target.value; rebuild(); });
+        $('#reset').addEventListener('click', () => {
+            state.ratio = 1; state.sep = 0; $('#ratio').value = 0; $('#sep').value = 0;
+            buildModel(); state.theta = M.thetaC; rebuild();
+        });
+        document.addEventListener('themechange', renderAll);
+        let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(renderAll, 80); });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            renderMathInElement(document.querySelector('main'), {
+                delimiters: [{ left: '\\[', right: '\\]', display: true }, { left: '\\(', right: '\\)', display: false }],
+                throwOnError: false,
+            });
+            buildModel();
+            state.theta = +M.thetaC.toFixed(2);
+            rebuild();
+        });
+    </script>
+</body>
+</html>
